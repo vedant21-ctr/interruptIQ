@@ -147,14 +147,23 @@ export function useRealtimeData(isDemoMode: boolean) {
     const NOTIFICATION_TYPES = ['social', 'work', 'urgent'];
     const poll = async () => {
       const notifType = NOTIFICATION_TYPES[Math.floor(Math.random() * NOTIFICATION_TYPES.length)];
+      
+      console.group(`[Live Mode] API Request: ${notifType}`);
+      console.log("Payload:", { context: contextRef.current, notification: notifType });
+      
       try {
         const response = await axios.post('http://localhost:8000/decision', {
           context: contextRef.current,
           notification: notifType
         });
+        
+        console.log("Response:", response.data);
+        console.groupEnd();
+        
         processResponse(response.data, notifType);
       } catch (err) {
         console.error("Polling error", err);
+        console.groupEnd();
       }
     };
 
@@ -164,14 +173,22 @@ export function useRealtimeData(isDemoMode: boolean) {
 
   // Demo Trigger
   const triggerDemoScenario = async (context: any, notification: string, expected: string) => {
+    console.group(`[Demo Mode] API Request: ${notification}`);
+    console.log("Payload:", { context, notification });
+    
     try {
       const response = await axios.post('http://localhost:8000/decision', {
         context,
         notification
       });
+      
+      console.log("Response:", response.data);
+      console.groupEnd();
+      
       processResponse(response.data, notification, expected);
     } catch (err) {
       console.error("Demo API error", err);
+      console.groupEnd();
     }
   };
 
