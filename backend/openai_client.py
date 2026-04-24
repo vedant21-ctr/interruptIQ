@@ -16,6 +16,10 @@ User Context:
 - location: {context.get('location')}
 - battery: {context.get('battery')}
 - activity: {context.get('activity')}
+- time_of_day: {context.get('time_of_day')}
+- charging: {context.get('charging')}
+- visibility: {context.get('visibility')}
+- network: {context.get('network')}
 
 Notification:
 - type: {notification}
@@ -24,7 +28,8 @@ Return JSON strictly:
 {{
   "decision": "IGNORE" | "DELAY" | "NOTIFY NOW",
   "reason": "short explanation",
-  "confidence": <number 0-100>
+  "confidence": <number 0-100>,
+  "signals_used": ["signal1", "signal2"]
 }}
 """
     try:
@@ -33,7 +38,7 @@ Return JSON strictly:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an attention intelligence system. Based on user context and notification type, decide whether to IGNORE, DELAY, or NOTIFY NOW. Respond ONLY with the requested JSON structure."
+                    "content": "You are an attention intelligence system. Consider user context including time of day, activity, visibility, network, and battery status. Decide whether to IGNORE, DELAY, or NOTIFY NOW. Respond ONLY with the requested JSON structure."
                 },
                 {"role": "user", "content": prompt_content}
             ],
@@ -48,5 +53,6 @@ Return JSON strictly:
         return {
             "decision": "NOTIFY NOW",
             "reason": "Fallback due to AI error.",
-            "confidence": 50
+            "confidence": 50,
+            "signals_used": []
         }

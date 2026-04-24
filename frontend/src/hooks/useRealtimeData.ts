@@ -32,10 +32,14 @@ export function useRealtimeData(isDemoMode: boolean) {
   // Context State
   const contextRef = useRef({
     battery: 100,
+    charging: false,
     location: 'home',
     activity: 'active',
     motion: 0,
-    heart_rate: 70
+    heart_rate: 70,
+    time_of_day: 'afternoon',
+    visibility: 'visible',
+    network: 'online'
   });
 
   // Track live context natively (we can keep tracking it even in demo mode, but we just won't poll it)
@@ -44,9 +48,13 @@ export function useRealtimeData(isDemoMode: boolean) {
     if ('getBattery' in navigator) {
       (navigator as any).getBattery().then((battery: any) => {
         if (!active) return;
-        const updateBattery = () => { contextRef.current.battery = Math.floor(battery.level * 100); };
+        const updateBattery = () => { 
+          contextRef.current.battery = Math.floor(battery.level * 100); 
+          contextRef.current.charging = battery.charging;
+        };
         updateBattery();
         battery.addEventListener('levelchange', updateBattery);
+        battery.addEventListener('chargingchange', updateBattery);
       });
     }
 
@@ -61,19 +69,46 @@ export function useRealtimeData(isDemoMode: boolean) {
     }
 
     const updateVisibility = () => {
-      contextRef.current.activity = document.visibilityState === 'visible' ? 'active' : 'idle';
+      contextRef.current.visibility = document.visibilityState === 'visible' ? 'visible' : 'hidden';
+      // keep basic activity tracking, but visibility helps now
     };
     document.addEventListener('visibilitychange', updateVisibility);
 
+    const updateNetwork = () => {
+      contextRef.current.network = navigator.onLine ? 'online' : 'offline';
+    };
+    window.addEventListener('online', updateNetwork);
+    window.addEventListener('offline', updateNetwork);
+    updateNetwork(); // init network
+
+    let lastActivityTime = Date.now();
+
     let motionAcc = 0;
-    const handleMouse = () => { motionAcc += 1; };
-    const handleKey = () => { motionAcc += 2; };
+    const handleMouse = () => { motionAcc += 1; lastActivityTime = Date.now(); };
+    const handleKey = () => { motionAcc += 2; lastActivityTime = Date.now(); };
     window.addEventListener('mousemove', handleMouse);
     window.addEventListener('keydown', handleKey);
+
+    const getTimeOfDay = () => {
+      const hour = new Date().getHours();
+      if (hour >= 5 && hour < 12) return 'morning';
+      if (hour >= 12 && hour < 17) return 'afternoon';
+      if (hour >= 17 && hour < 21) return 'evening';
+      return 'night';
+    };
 
     const intVal = setInterval(() => {
       contextRef.current.motion = Math.min(motionAcc, 10);
       contextRef.current.heart_rate = 65 + Math.floor(Math.random() * 15);
+      contextRef.current.time_of_day = getTimeOfDay();
+      
+      // Determine activity vs idle (if > 5 seconds without interaction -> idle)
+      if (Date.now() - lastActivityTime > 5000) {
+        contextRef.current.activity = 'idle';
+      } else {
+        contextRef.current.activity = 'active';
+      }
+      
       motionAcc = 0;
     }, 1000);
 
@@ -82,6 +117,8 @@ export function useRealtimeData(isDemoMode: boolean) {
       document.removeEventListener('visibilitychange', updateVisibility);
       window.removeEventListener('mousemove', handleMouse);
       window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('online', updateNetwork);
+      window.removeEventListener('offline', updateNetwork);
       clearInterval(intVal);
     };
   }, []);
