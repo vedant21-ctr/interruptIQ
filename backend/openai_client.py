@@ -6,7 +6,8 @@ import json
 load_dotenv()
 
 # We expect OPENAI_API_KEY to be present in .env
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+api_key = os.getenv("OPENAI_API_KEY", "dummy_key_to_prevent_crash")
+client = OpenAI(api_key=api_key)
 
 def get_openai_decision(context: dict, notification: str):
     prompt_content = f"""
