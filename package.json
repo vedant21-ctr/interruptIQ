@@ -1,0 +1,38 @@
+{
+  "name": "interrupt-iq-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "InterruptIQ AI Context Intelligence Platform",
+  "scripts": {
+    "dev": "pnpm --filter \"*\" --parallel dev",
+    "build": "pnpm --filter \"*\" build",
+    "test": "pnpm --filter \"*\" test",
+    "lint": "pnpm --filter \"*\" lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "prettier": "^3.2.5",
+    "eslint": "^8.56.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{js,json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "pnpm": {
+    "overrides": {
+      "vitest": "0.34.6",
+      "vite": "4.5.2",
+      "avvio": "8.2.0",
+      "fastify": "4.20.0",
+      "tsx": "3.14.0"
+    }
+  }
+}

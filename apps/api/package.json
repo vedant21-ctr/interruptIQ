@@ -1,0 +1,41 @@
+{
+  "name": "@interrupt-iq/api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.5.0",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/swagger": "^8.14.0",
+    "@fastify/swagger-ui": "^2.1.0",
+    "@interrupt-iq/ai-core": "workspace:*",
+    "@interrupt-iq/embedding-engine": "workspace:*",
+    "@interrupt-iq/shared": "workspace:*",
+    "@prisma/client": "^4.16.2",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.26.2",
+    "fastify-plugin": "^4.5.1",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^8.19.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/ioredis": "4.28.10",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.11.24",
+    "ioredis": "4.28.5",
+    "pino-pretty": "^10.3.1",
+    "prisma": "^4.16.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3",
+    "vitest": "0.34.6"
+  }
+}

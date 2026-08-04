@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: always
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+
+  redis:
+    restart: always
+    volumes:
+      - redisdata_prod:/data
+
+  api:
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+
+  web:
+    restart: always
+
+volumes:
+  pgdata_prod:
+  redisdata_prod:

@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "apps/web" },
+    { "path": "apps/api" },
+    { "path": "packages/ai-core" },
+    { "path": "packages/shared" },
+    { "path": "packages/ui" },
+    { "path": "packages/embedding-engine" }
+  ]
+}

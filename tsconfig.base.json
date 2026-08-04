@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "baseUrl": ".",
+    "paths": {
+      "@interrupt-iq/embedding-engine": ["packages/embedding-engine/src/index.ts"],
+      "@interrupt-iq/shared": ["packages/shared/src/index.ts"],
+      "@interrupt-iq/ai-core": ["packages/ai-core/src/index.ts"]
+    }
+  }
+}

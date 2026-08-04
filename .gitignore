@@ -1,7 +1,61 @@
+# Dependency directories
 node_modules/
+jspm_packages/
+web_folders/
+
+# Build outputs
 dist/
 build/
+.next/
+out/
+bin/
+obj/
+
+# Local env files
 .env
-venv/
+.env.local
+.env.development
+.env.test
+.env.production
+.env.staging
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+logs/
+*.log
+
+# OS Metadata
+.DS_Store
+Thumbs.db
+
+# IDE configurations
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Testing
+coverage/
+.nyc_output
+playwright-report/
+test-results/
+
+# Python caching
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+.venv/
+env/
+
+# Compatibility helper
+strip-node-prefix.js

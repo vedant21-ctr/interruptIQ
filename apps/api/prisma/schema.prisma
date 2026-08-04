@@ -1,0 +1,285 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// Authentication Models (Better Auth Compatible)
+// ==========================================
+
+model User {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // Soft delete indicator
+
+  // Relations
+  sessions         Session[]
+  accounts         Account[]
+  workspaces       Workspace[]
+  contextSnapshots ContextSnapshot[]
+  events           Event[]
+  rules            Rule[]
+  memoryEpisodes   MemoryEpisode[]
+  analyticsRollups AnalyticsRollup[]
+  CriticEvaluation CriticEvaluation[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id           String    @id @default(uuid())
+  userId       String
+  accountId    String
+  providerId   String
+  accessToken  String?
+  refreshToken String?
+  idToken      String?
+  expiresAt    DateTime?
+  password     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ==========================================
+// Core Domain Models
+// ==========================================
+
+model Workspace {
+  id        String    @id @default(uuid())
+  name      String
+  userId    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete indicator
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events Event[]
+
+  @@index([userId])
+}
+
+model ContextSnapshot {
+  id         String  @id @default(uuid())
+  userId     String
+  battery    Int
+  charging   Boolean
+  activity   String // coding, meeting, idle, sleeping
+  timeOfDay  String // morning, afternoon, evening, night
+  visibility String // visible, hidden
+  network    String // online, offline
+  location   String?
+  motion     String?
+  heartRate  Int?
+
+  // New context intelligence engine fields
+  currentTask    String?
+  focusLevel     Int? // 0-100
+  calendarStatus String?
+  workingMode    String?
+  deviceStatus   String?
+  manualNotes    String?
+  metadata       Json? // Future-proof storage for arbitrary context signals
+
+  createdAt DateTime @default(now())
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisions      Decision[]
+  memoryEpisodes MemoryEpisode[]
+
+  @@index([userId, createdAt])
+}
+
+model Event {
+  id          String  @id @default(uuid())
+  userId      String
+  workspaceId String?
+  title       String
+  body        String
+  sender      String
+  category    String // social, development, system, urgent
+  source      String // Slack, GitHub, Email, etc.
+
+  // New event ingestion engine fields
+  priority String @default("medium") // low, medium, high, urgent
+  status   String @default("pending") // pending, processed, ignored
+  payload  Json? // Original incoming raw payload
+  metadata Json? // Extra contextual metadata
+
+  timestamp DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace      Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  decision       Decision?
+  memoryEpisodes MemoryEpisode[]
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@index([userId, category])
+  @@index([workspaceId])
+}
+
+model Decision {
+  id                String   @id @default(uuid())
+  eventId           String   @unique
+  contextSnapshotId String?
+  decision          String // IGNORE, DELAY, NOTIFY NOW
+  reason            String
+  confidence        Float
+  signalsUsed       String[] // Array of signal names used in calculation
+  createdAt         DateTime @default(now())
+
+  event           Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contextSnapshot ContextSnapshot?     @relation(fields: [contextSnapshotId], references: [id], onDelete: SetNull)
+  explanation     DecisionExplanation?
+  feedbacks       Feedback[]
+  memoryEpisode   MemoryEpisode?
+
+  @@index([eventId])
+  @@index([contextSnapshotId])
+}
+
+model DecisionExplanation {
+  id                   String   @id @default(uuid())
+  decisionId           String   @unique
+  narrative            String
+  rulesAttribution     Float // percentage weight [0-1]
+  semanticsAttribution Float // percentage weight [0-1]
+  mlAttribution        Float // percentage weight [0-1]
+  historyAttribution   Float // percentage weight [0-1]
+  createdAt            DateTime @default(now())
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+}
+
+model Feedback {
+  id               String   @id @default(uuid())
+  decisionId       String
+  originalDecision String
+  userAction       String // ACCEPTED, OVERRIDDEN, DISMISSED, RESTORED, CUSTOM
+  comment          String?
+  createdAt        DateTime @default(now())
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([decisionId])
+}
+
+model Rule {
+  id            String    @id @default(uuid())
+  userId        String
+  name          String
+  conditionJson String // Serialized rule schema parameters
+  action        String // IGNORE, DELAY, BYPASS
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // Soft delete indicator
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+}
+
+model MemoryEpisode {
+  id                String  @id @default(uuid())
+  userId            String
+  eventId           String?
+  decisionId        String? @unique
+  contextSnapshotId String?
+
+  decisionType     String
+  explanation      String
+  matchedRules     String[]
+  confidence       Float
+  feedbackSummary  String?
+  outcome          String // ACCEPTED, OVERRIDDEN, DISMISSED, etc.
+  metadata         Json?
+  embedding        Float[]
+  embeddingVersion String?
+  embeddedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event           Event?           @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  decision        Decision?        @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  contextSnapshot ContextSnapshot? @relation(fields: [contextSnapshotId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([userId, outcome, decisionType])
+  @@index([userId, embeddingVersion])
+}
+
+model AnalyticsRollup {
+  id                  String   @id @default(uuid())
+  userId              String
+  date                DateTime
+  totalEvents         Int
+  immediateCount      Int
+  delayedCount        Int
+  silencedCount       Int
+  overridesCount      Int
+  attentionHoursSaved Float
+  createdAt           DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model CriticEvaluation {
+  id                   String   @id @default(uuid())
+  userId               String
+  episodeId            String
+  verdict              String // APPROPRIATE, INAPPROPRIATE, etc.
+  confidence           Float
+  explanation          String
+  strengths            String[]
+  weaknesses           String[]
+  suggestedRuleChanges Json // Array of suggested rule changes
+  rawPrompt            String
+  rawResponse          String
+  createdAt            DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
