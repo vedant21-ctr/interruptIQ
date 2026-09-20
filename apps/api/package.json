@@ -22,6 +22,7 @@
     "dotenv": "^16.4.5",
     "fastify": "^4.26.2",
     "fastify-plugin": "^4.5.1",
+    "ioredis": "4.28.5",
     "jsonwebtoken": "^9.0.2",
     "pino": "^8.19.0",
     "zod": "^3.22.4"
@@ -31,7 +32,6 @@
     "@types/ioredis": "4.28.10",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^20.11.24",
-    "ioredis": "4.28.5",
     "pino-pretty": "^10.3.1",
     "prisma": "^4.16.2",
     "tsx": "^4.7.1",
