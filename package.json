@@ -5,7 +5,7 @@
   "description": "InterruptIQ AI Context Intelligence Platform",
   "scripts": {
     "dev": "pnpm --filter \"*\" --parallel dev",
-    "build": "pnpm --filter \"*\" build",
+    "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
     "test": "pnpm --filter \"*\" test",
     "lint": "pnpm --filter \"*\" lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\""

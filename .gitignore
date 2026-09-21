@@ -10,6 +10,7 @@ build/
 out/
 bin/
 obj/
+*.tsbuildinfo
 
 # Local env files
 .env

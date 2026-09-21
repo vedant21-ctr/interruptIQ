@@ -22,15 +22,16 @@ model User {
   deletedAt     DateTime? // Soft delete indicator
 
   // Relations
-  sessions         Session[]
-  accounts         Account[]
-  workspaces       Workspace[]
-  contextSnapshots ContextSnapshot[]
-  events           Event[]
-  rules            Rule[]
-  memoryEpisodes   MemoryEpisode[]
-  analyticsRollups AnalyticsRollup[]
-  CriticEvaluation CriticEvaluation[]
+  sessions               Session[]
+  accounts               Account[]
+  workspaces             Workspace[]
+  contextSnapshots       ContextSnapshot[]
+  events                 Event[]
+  rules                  Rule[]
+  memoryEpisodes         MemoryEpisode[]
+  analyticsRollups       AnalyticsRollup[]
+  CriticEvaluation       CriticEvaluation[]
+  integrationConnections IntegrationConnection[]
 
   @@index([email])
 }
@@ -282,4 +283,27 @@ model CriticEvaluation {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+model IntegrationConnection {
+  id                String    @id @default(uuid())
+  userId            String
+  provider          String    // "slack" | "google"
+  providerAccountId String?   // Slack Team/User ID or Google Email/User ID
+  accessToken       String?
+  refreshToken      String?
+  expiresAt         DateTime?
+  scopes            String[]
+  status            String    @default("connected") // "connected" | "syncing" | "paused" | "error" | "disconnected"
+  lastSyncedAt      DateTime?
+  pausedAt          DateTime?
+  errorMessage      String?
+  syncCursor        String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId, status])
 }

@@ -21,6 +21,7 @@ import { feedbackRoutes } from './modules/feedback/feedback.routes';
 import { memoryRoutes } from './modules/memory/memory.routes';
 import { analyticsRoutes } from './modules/analytics/analytics.routes';
 import { criticRoutes } from './modules/critic/critic.routes';
+import { integrationsRoutes } from './modules/integrations/integrations.routes';
 
 export function buildApp(): FastifyInstance {
   const loggerConfig = {
@@ -134,6 +135,7 @@ export function buildApp(): FastifyInstance {
       api.register(memoryRoutes, { prefix: '/memory' });
       api.register(analyticsRoutes, { prefix: '/analytics' });
       api.register(criticRoutes, { prefix: '/critic' });
+      api.register(integrationsRoutes, { prefix: '/integrations' });
     },
     { prefix: '/api/v1' }
   );

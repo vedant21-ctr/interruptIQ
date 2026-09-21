@@ -26,8 +26,8 @@ export async function memoryRoutes(fastify: FastifyInstance) {
 
   const embeddingGenerator = new EmbeddingGenerator();
   const embeddingCache = new EmbeddingCache(1000, {
-    get: async (key) => cacheService.get<number[]>(key),
-    set: async (key, val) => cacheService.set(key, val, 24 * 3600),
+    get: async (key: string) => cacheService.get<number[]>(key),
+    set: async (key: string, val: number[]) => cacheService.set(key, val, 24 * 3600),
   });
   const embeddingService = new EmbeddingService(embeddingGenerator, embeddingCache);
 

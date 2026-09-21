@@ -1,61 +1,53 @@
-# InterruptIQ — Attention Gateway & Cognitive Optimizer (v1.0.0)
+# InterruptIQ — Attention Gateway & Focus Intelligence Platform
 
-InterruptIQ is an intelligent, context-aware cognitive attention gateway. Rather than acting as a static notification blocker, it operates as a context-aware gateway calculating real-time cognitive budgets, delivery options, and notification categories.
+InterruptIQ is an intelligent attention gateway for engineering teams. Rather than acting as a static notification blocker or LLM summarizer, InterruptIQ operates in a read-only shadow mode (Focus Report v0) to measure interruption overhead, infer focus state boundaries, and evaluate counterfactual notification delivery policies.
 
 ---
 
 ## 🚀 Key Features
 
-* **Real-time Context Tracking:** Continuously aggregates system, activity, focus, and battery signals.
-* **Deterministic Rules Engine:** Executes priority classification and context threshold matching.
-* **Semantic Retrieval Engine:** Connects historical decisions to direct local embedding matches (BGE-small-en-v1.5).
-* **LLM Critic review**: Headless critic evaluating decisions against historical memory records and user overrides.
-* **Web Simulator Dashboard**: Real-time developer control panel to customize context, inject events, and inspect outputs.
+* **Focus Report (Shadow Mode v0):** Read-only evaluation mode analyzing Slack and Google Calendar metadata over a 2-week period without blocking, delaying, or modifying live messages.
+* **Pure Shadow Policy Engine:** Deterministic counterfactual policy evaluating whether incoming events should be delivered immediately, delayed to meeting boundaries, or batched.
+* **Sampled Review & Label Queue:** Solves ground-truth collection by enabling engineers to review sampled counterfactual delays and provide feedback.
+* **Deterministic Rules & Focus Inference:** Infers user focus states (`ooo`, `meeting`, `focus_block`, `quiet_window`, `available`) based on calendar boundaries and activity patterns.
+* **LLM Critic Review (Offline):** Asynchronous evaluation of historical decision episodes against user feedback overrides.
+* **Interactive Simulator Dashboard:** Developer control panel to simulate context, test event policies, and inspect metric rollups.
 
 ---
 
 ## 🏛️ Architecture Overview
 
-The system is split into three main components:
-1. **API Monolith Gateway:** Powered by Fastify, Zod, and PostgreSQL/Prisma.
-2. **Local Embedding Engine:** Powered by ONNX Runtime / Transformers.js to execute local embeddings calculations offline.
-3. **AI Simulator Dashboard:** Powered by React, Vite, and TailwindCSS.
-
-```mermaid
-graph TD
-    A[Incoming Notifications] --> B(Ingestion Engine)
-    B --> C{Decision Pipeline v1}
-    C -->|Active Context Snapshot| D[Rules Evaluator]
-    C -->|Semantic Memory Matcher| E[Embedding Retrieval Engine]
-    C -->|Decision Output| F[Ingested memory Indexer]
-    F --> G[LLM Critic Evaluator]
-    G --> H[Suggested Rules Recommendations]
-```
+The system consists of the following packages:
+1. **API Backend (`apps/api`):** Fastify TypeScript service hosting context snapshots, event ingestion, decision history, and shadow metrics.
+2. **Web Simulator (`apps/web`):** React, Vite, and Tailwind CSS operator dashboard.
+3. **Embedding Engine (`packages/embedding-engine`):** Local vector embedding generator (ONNX / Transformer.js fallback).
+4. **Shared Domain (`packages/shared`):** Pure TypeScript domain models, Focus Report metrics, and pure shadow policy functions.
 
 ---
 
 ## 📂 Folder Structure
 
 ```
-├── apps
-│   ├── api          # Fastify TypeScript service
-│   └── web          # React simulator application
-├── packages
-│   ├── embedding-engine # Local vector embedding generator (ONNX)
-│   ├── ai-core      # Rules definitions
-│   ├── shared       # Shared types and constants
-│   └── ui           # UI components
-├── docs             # System design specifications
+├── apps/
+│   ├── api/          # Fastify TypeScript service
+│   └── web/          # React simulator application
+├── packages/
+│   ├── embedding-engine/ # Local vector embedding generator (ONNX)
+│   ├── ai-core/      # Heuristic fallback rules
+│   ├── shared/       # Domain types, focus state inference, and pure shadow policy
+│   └── ui/           # Shared UI stubs
+├── docs/             # Technical specifications & Focus Report plans
 └── docker-compose.yml
 ```
 
 ---
 
 ## 🛠️ Tech Stack
+
 * **Backend:** Node.js, Fastify, TypeScript, Prisma, Vitest.
-* **Database:** PostgreSQL.
-* **Embeddings:** ONNX Runtime, Transformers.js (MiniLM / BGE-small).
-* **Frontend:** React, Vite, TailwindCSS, Zustand, Framer Motion.
+* **Database:** PostgreSQL, Redis.
+* **Frontend:** React, Vite, Tailwind CSS, Framer Motion.
+* **Domain Engine:** Pure functional TypeScript policies.
 
 ---
 
@@ -66,14 +58,9 @@ Clone the repository and install all workspace dependencies:
 pnpm install
 ```
 
-Configure your environment variables by copying `.env.example` to `.env`:
+Configure environment variables by copying `.env.example` to `.env`:
 ```bash
 cp .env.example .env
-```
-
-Apply database migrations:
-```bash
-pnpm --filter @interrupt-iq/api prisma db push
 ```
 
 ---
@@ -85,10 +72,9 @@ pnpm --filter @interrupt-iq/api prisma db push
 pnpm run dev
 ```
 
-### Production Mode
+### Type Checking
 ```bash
-pnpm run build
-pnpm start
+pnpm exec tsc --noEmit
 ```
 
 ### Running Test Suites
@@ -100,91 +86,18 @@ pnpm run test
 
 ## 🐳 Docker Setup
 
-Build and launch the complete stack containing Postgres, API, and Web client:
+Build and launch Postgres, Redis, API, and Web client:
 ```bash
 docker-compose up --build
 ```
 
-For production environments, stack overrides can be run via:
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
-
 ---
 
-## 💾 Database Migrations Setup
+## 📖 System Documentation
 
-Apply database migrations:
-```bash
-pnpm --filter @interrupt-iq/api prisma migrate deploy
-```
+- [Focus Report Spec (v0)](file:///d:/interuptiq/docs/product/focus-report-spec.md)
+- [Focus Report Implementation Plan](file:///d:/interuptiq/docs/product/focus-report-implementation-plan.md)
+- [Slack Feasibility Analysis](file:///d:/interuptiq/docs/integrations/slack-feasibility.md)
+- [Google Calendar Feasibility Analysis](file:///d:/interuptiq/docs/integrations/google-calendar-feasibility.md)
+- [Attention Engine Long-Term Spec](file:///d:/interuptiq/docs/architecture/attention-engine.md)
 
----
-
-## 🏛️ Module Overview & Subsystems
-
-* **`apps/api`**: Fastify framework hosting context snapshots, event ingestion pipelines, decision history, and critic evaluations endpoints.
-* **`apps/web`**: React, Vite, Tailwind CSS interface providing operator control sliders, telemetry views, and feedback panels.
-* **`packages/embedding-engine`**: Local vector space calculator hosting transformers ONNX engines with memory-safe LRU eviction limits.
-
----
-
-## 🛠️ Development Workflow
-
-1. **Spin up local database**:
-   ```bash
-   docker-compose up -d postgres
-   ```
-2. **Execute type checking**:
-   ```bash
-   pnpm run typecheck
-   ```
-3. **Execute test runners**:
-   ```bash
-   pnpm run test
-   ```
-
----
-
-## 🚀 Deployment Guide
-
-1. **Configure Production env**: Copy `.env.example` to production `.env` and override:
-   - `DATABASE_URL` pointing to production cluster.
-   - `JWT_SECRET` configured with secure cryptograph hashes.
-   - `ALLOWED_ORIGINS` locked down to client hosts.
-2. **Launch via compose**:
-   ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-   ```
-
----
-
-## 📦 Migration Guide
-
-To introduce database model changes:
-1. Update models in `apps/api/prisma/schema.prisma`.
-2. Generate migration SQL file (non-interactive):
-   ```bash
-   npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/migrations/<timestamp>_<name>/migration.sql
-   ```
-3. Mark migration as applied in development:
-   ```bash
-   npx prisma migrate resolve --applied <timestamp>_<name>
-   ```
-4. Deploy migrations in production pipelines:
-   ```bash
-   npx prisma migrate deploy
-   ```
-
----
-
-## 📖 API Documentation Reference
-Once the backend starts, Swagger interactive documentation is exposed at:
-* **Interactive spec:** [http://localhost:3001/documentation](http://localhost:3001/documentation)
-
----
-
-## 🗺️ Project Roadmap
-* **v1.1.0:** Real-time push notification adapters (Slack / Email webhooks).
-* **v1.2.0:** Multi-agent LLM selector and local LLM fine-tuning loops.
-* **v2.0.0:** On-device context aggregation and native iOS/Android clients.
