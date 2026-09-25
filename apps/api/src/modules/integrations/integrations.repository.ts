@@ -149,4 +149,57 @@ export class IntegrationsRepository {
       },
     });
   }
+
+  async upsertCalendarBlock(data: {
+    userId: string;
+    provider: string;
+    providerEventId: string;
+    startAt: Date;
+    endAt: Date;
+    kind: string;
+    isBusy: boolean;
+    attendeeCount: number;
+  }): Promise<any> {
+    return this.prisma.calendarBlock.upsert({
+      where: {
+        userId_providerEventId: {
+          userId: data.userId,
+          providerEventId: data.providerEventId,
+        },
+      },
+      create: {
+        userId: data.userId,
+        provider: data.provider,
+        providerEventId: data.providerEventId,
+        startAt: data.startAt,
+        endAt: data.endAt,
+        kind: data.kind,
+        isBusy: data.isBusy,
+        attendeeCount: data.attendeeCount,
+      },
+      update: {
+        startAt: data.startAt,
+        endAt: data.endAt,
+        kind: data.kind,
+        isBusy: data.isBusy,
+        attendeeCount: data.attendeeCount,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async findCalendarBlocks(
+    userId: string,
+    timeRange?: { start: Date; end: Date }
+  ): Promise<any[]> {
+    const where: any = { userId };
+    if (timeRange) {
+      where.startAt = { gte: timeRange.start };
+      where.endAt = { lte: timeRange.end };
+    }
+    return this.prisma.calendarBlock.findMany({
+      where,
+      orderBy: { startAt: 'asc' },
+    });
+  }
 }

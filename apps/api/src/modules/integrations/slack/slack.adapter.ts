@@ -14,6 +14,10 @@ export class SlackAdapter implements IntegrationAdapter {
       'groups:history',
       'im:history',
       'mpim:history',
+      'channels:read',
+      'groups:read',
+      'im:read',
+      'mpim:read',
       'users:read',
     ].join(',');
 
@@ -34,7 +38,17 @@ export class SlackAdapter implements IntegrationAdapter {
       // Return safe mock tokens for testing/development environments
       return {
         accessToken: `mock-slack-access-token-${Date.now()}`,
-        scopes: ['channels:history', 'groups:history', 'im:history', 'mpim:history', 'users:read'],
+        scopes: [
+          'channels:history',
+          'groups:history',
+          'im:history',
+          'mpim:history',
+          'channels:read',
+          'groups:read',
+          'im:read',
+          'mpim:read',
+          'users:read',
+        ],
         providerAccountId: 'U12345678',
       };
     }
@@ -74,7 +88,17 @@ export class SlackAdapter implements IntegrationAdapter {
     if (!clientId || !clientSecret) {
       return {
         accessToken: `mock-refreshed-slack-token-${Date.now()}`,
-        scopes: ['channels:history', 'groups:history', 'im:history', 'mpim:history', 'users:read'],
+        scopes: [
+          'channels:history',
+          'groups:history',
+          'im:history',
+          'mpim:history',
+          'channels:read',
+          'groups:read',
+          'im:read',
+          'mpim:read',
+          'users:read',
+        ],
       };
     }
 
@@ -156,38 +180,85 @@ export class SlackAdapter implements IntegrationAdapter {
       };
     }
 
-    // Live Slack Web API conversations.history execution
     const oldest = (new Date(timeRange.start).getTime() / 1000).toString();
     const latest = (new Date(timeRange.end).getTime() / 1000).toString();
 
-    const url = new URL('https://slack.com/api/conversations.history');
-    url.searchParams.set('channel', 'C_GENERAL');
-    url.searchParams.set('oldest', oldest);
-    url.searchParams.set('latest', latest);
-    url.searchParams.set('limit', '100');
-    if (cursor) url.searchParams.set('cursor', cursor);
+    // 1. Discover accessible conversations via conversations.list pagination
+    const channels: Array<{ id: string; type?: 'im' | 'mpim' | 'private' | 'public' }> = [];
+    let listCursor: string | undefined = cursor;
 
-    const response = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${tokens.accessToken}` },
-    });
+    do {
+      const listUrl = new URL('https://slack.com/api/conversations.list');
+      listUrl.searchParams.set('types', 'public_channel,private_channel,mpim,im');
+      listUrl.searchParams.set('limit', '100');
+      if (listCursor) listUrl.searchParams.set('cursor', listCursor);
 
-    const data = (await response.json()) as any;
-    if (!data.ok) {
-      throw new Error(`Slack history fetch error: ${data.error}`);
+      const listResponse = await fetch(listUrl.toString(), {
+        headers: { Authorization: `Bearer ${tokens.accessToken}` },
+      });
+
+      const listData = (await listResponse.json()) as any;
+      if (!listData.ok) {
+        throw new Error(`Slack channel discovery failed: ${listData.error || 'Unknown error'}`);
+      }
+
+      const rawChannels = listData.channels || [];
+      for (const ch of rawChannels) {
+        const type = ch.is_im
+          ? 'im'
+          : ch.is_mpim
+          ? 'mpim'
+          : ch.is_private
+          ? 'private'
+          : 'public';
+        channels.push({ id: ch.id, type });
+      }
+
+      listCursor = listData.response_metadata?.next_cursor || undefined;
+    } while (listCursor);
+
+    // 2. Fetch history for each channel with conversations.history pagination
+    const interruptions: any[] = [];
+
+    for (const channel of channels) {
+      let historyCursor: string | undefined = undefined;
+
+      do {
+        const histUrl = new URL('https://slack.com/api/conversations.history');
+        histUrl.searchParams.set('channel', channel.id);
+        histUrl.searchParams.set('oldest', oldest);
+        histUrl.searchParams.set('latest', latest);
+        histUrl.searchParams.set('limit', '100');
+        if (historyCursor) histUrl.searchParams.set('cursor', historyCursor);
+
+        const histResponse = await fetch(histUrl.toString(), {
+          headers: { Authorization: `Bearer ${tokens.accessToken}` },
+        });
+
+        const histData = (await histResponse.json()) as any;
+        if (!histData.ok) {
+          // Skip channel gracefully if missing channel access
+          break;
+        }
+
+        const rawMessages: RawSlackMessagePayload[] = histData.messages || [];
+        for (const msg of rawMessages) {
+          const record = normalizeSlackMessage(
+            { ...msg, channel: channel.id, channel_type: channel.type },
+            userId,
+            tokens.providerAccountId
+          );
+          interruptions.push(record);
+        }
+
+        historyCursor = histData.response_metadata?.next_cursor || undefined;
+      } while (historyCursor);
     }
-
-    const rawMessages: RawSlackMessagePayload[] = data.messages || [];
-    const interruptions = rawMessages.map((msg) =>
-      normalizeSlackMessage(msg, userId, tokens.providerAccountId)
-    );
-
-    const nextCursor = data.response_metadata?.next_cursor || undefined;
 
     return {
       provider: 'slack',
       interruptions,
       calendarBlocks: [],
-      nextCursor,
     };
   }
 

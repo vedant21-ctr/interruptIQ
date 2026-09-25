@@ -20,13 +20,14 @@ import { DecisionsPage } from './pages/DecisionsPage';
 import { FeedbackPage } from './pages/FeedbackPage';
 import { MemoryExplorerPage } from './pages/MemoryExplorerPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { FocusReportPage } from './pages/FocusReportPage';
 
 const API_BASE = 'http://localhost:3001/api/v1';
 
 export default function App() {
   // Navigation & Authentication state variables
   const [token, setToken] = useState<string | null>(localStorage.getItem('iiq_token'));
-  const [activePage, setActivePage] = useState<'dashboard' | 'context' | 'injector' | 'decisions' | 'feedback' | 'memory' | 'settings'>('dashboard');
+  const [activePage, setActivePage] = useState<'dashboard' | 'report' | 'context' | 'injector' | 'decisions' | 'feedback' | 'memory' | 'settings'>('dashboard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -581,6 +582,19 @@ export default function App() {
                   feedbackStats={feedbackStats}
                   memories={memories}
                 />
+              </motion.div>
+            )}
+
+            {/* VIEW: FOCUS REPORT */}
+            {activePage === 'report' && (
+              <motion.div
+                key="report"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.15 }}
+              >
+                <FocusReportPage token={token} apiBase={API_BASE} />
               </motion.div>
             )}
 

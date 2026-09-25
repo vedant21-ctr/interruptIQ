@@ -246,8 +246,9 @@ All decisions tag `policyVersion: "shadow-v0.1"`. Replaying historical fixtures 
 
 ---
 
-## 14. Phase-0 Implementation Completed
+## 14. Completed Milestones
 
+### Phase-0 Completed (Focus Report Core)
 - Pure domain types & policy versioning in `packages/shared/src/focus-report/types.ts`.
 - Pure shadow policy engine in `packages/shared/src/focus-report/policy.ts`.
 - Focus state inference engine in `packages/shared/src/focus-report/focus-state.ts`.
@@ -255,14 +256,33 @@ All decisions tag `policyVersion: "shadow-v0.1"`. Replaying historical fixtures 
 - Focus Report metrics calculator in `packages/shared/src/focus-report/metrics.ts`.
 - Comprehensive Vitest unit test suite in `packages/shared/test/focus-report.test.ts`.
 
+### Phase-1 Completed (Integration Foundation & Persistence)
+- Slack & Google Calendar OAuth flow handlers and adapters in `apps/api/src/modules/integrations/`.
+- Privacy-preserving normalization boundaries erasing raw text and calendar summaries in memory.
+- `IntegrationConnection` and `CalendarBlock` database models & migration `20260924000000_add_integration_connection_and_calendar_block`.
+- Slack channel discovery (`conversations.list` pagination) and message history pagination (`conversations.history`).
+- Automatic OAuth token refresh before integration sync operations.
+
+### Phase-3 Completed (Internal Dogfooding UI & Sampled Review Queue)
+- Prisma `FocusReportReview` model and migration (`20260924000001_add_focus_report_review`).
+- Lightweight internal dogfooding UI page at `apps/web/src/pages/FocusReportPage.tsx` integrated into `App.tsx` and `Header.tsx`.
+- Displays report period, high-level metrics, focus state breakdown, shadow outcome breakdown, and sampled review queue.
+- Exposes `POST /api/v1/focus-report/reviews` API with strict JWT authentication, user scoping, and event ownership validation.
+- Neutral review wording ("Would this counterfactual decision have been reasonable?") with structured options: `AGREE`, `UNSURE`, `DISAGREE`.
+- Dynamic integration of user review verdicts into replay simulator metrics (`adjustedAvoidableShare` and `criticalDelayRate`).
+- Vitest unit/integration test coverage for review submission, invalid labels, cross-user authorization, and metric updates in `apps/api/test/focus-report.test.ts`.
+
 ---
 
 ## 15. Next Implementation Step
 
-- Implement production OAuth flow handlers for Slack and Google Calendar in `apps/api`.
+- Collect structured internal dogfooding feedback on Shadow Policy v0.1 decisions before considering Phase 4 policy refinements or live features.
 
 ---
 
 ## 16. Explicitly Deferred Work
 
-- Full Attention Debt equations, Qdrant/pgvector integration, live message blocking/delaying, IDE plugins, LLM decision wrappers.
+- Live notification delivery control, live message blocking/delaying/suppression.
+- Full Attention Debt equations, vector embeddings, LLM per-event decisions.
+- GitHub, Jira, and PagerDuty integrations.
+- Manager dashboards, employee productivity scoring, surveillance features.

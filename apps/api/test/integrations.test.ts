@@ -3,6 +3,7 @@ import { SlackAdapter } from '../src/modules/integrations/slack/slack.adapter';
 import { normalizeSlackMessage } from '../src/modules/integrations/slack/slack.normalizer';
 import { GoogleCalendarAdapter } from '../src/modules/integrations/google/google.adapter';
 import { normalizeGoogleCalendarEvent } from '../src/modules/integrations/google/google.normalizer';
+import { IntegrationsService } from '../src/modules/integrations/integrations.service';
 import {
   calculateFocusReportMetrics,
   evaluateShadowPolicy,
@@ -158,4 +159,110 @@ describe('Focus Report Integration Layer Foundation', () => {
     expect(metrics.estimatedRecoveryCostMinutes.type).toBe('ESTIMATED');
   });
 
+  // Test 5: Automatic Token Refresh during Sync
+  it('IntegrationsService: automatically refreshes expired access token before sync', async () => {
+    let upsertCalled = false;
+    let refreshedTokensSaved = false;
+
+    const mockRepo: any = {
+      findConnection: async (userId: string, provider: string) => ({
+        userId,
+        provider,
+        accessToken: 'expired-access-token',
+        refreshToken: 'valid-refresh-token',
+        expiresAt: new Date(Date.now() - 10000), // Expired 10 seconds ago
+        scopes: ['channels:history', 'channels:read'],
+        status: 'connected',
+      }),
+      upsertConnection: async (data: any) => {
+        upsertCalled = true;
+        if (data.accessToken.startsWith('mock-refreshed-')) {
+          refreshedTokensSaved = true;
+        }
+        return { ...data, createdAt: new Date() };
+      },
+      updateConnectionStatus: async () => {},
+      createNormalizedEvent: async () => {},
+      upsertCalendarBlock: async () => {},
+    };
+
+    const service = new IntegrationsService(mockRepo);
+    const validTokens = await service.getValidTokens('user-test-1', 'slack');
+
+    expect(upsertCalled).toBe(true);
+    expect(refreshedTokensSaved).toBe(true);
+    expect(validTokens.accessToken).toContain('mock-refreshed-slack-token');
+  });
+
+  // Test 6: Failed Token Refresh Marks Connection as Error
+  it('IntegrationsService: updates connection status to error when token refresh fails', async () => {
+    let errorStatusSet = false;
+    let errorMessageSaved = '';
+
+    const mockRepo: any = {
+      findConnection: async (userId: string, provider: string) => ({
+        userId,
+        provider,
+        accessToken: 'expired-token',
+        refreshToken: 'invalid-refresh-token',
+        expiresAt: new Date(Date.now() - 10000),
+        scopes: [],
+        status: 'connected',
+      }),
+      updateConnectionStatus: async (userId: string, provider: string, status: string, msg: string) => {
+        if (status === 'error') {
+          errorStatusSet = true;
+          errorMessageSaved = msg;
+        }
+      },
+    };
+
+    const service = new IntegrationsService(mockRepo);
+    // Force adapter to fail refresh
+    service['slackAdapter'].refreshAccessToken = async () => {
+      throw new Error('invalid_grant');
+    };
+
+    await expect(service.getValidTokens('user-test-1', 'slack')).rejects.toThrow('Integration token refresh failed');
+    expect(errorStatusSet).toBe(true);
+    expect(errorMessageSaved).toContain('invalid_grant');
+  });
+
+  // Test 7: Calendar Block Persistence & Deduplication in Sync Pipeline
+  it('IntegrationsService: persists normalized calendar blocks idempotently during sync', async () => {
+    const savedBlocks: any[] = [];
+
+    const mockRepo: any = {
+      findConnection: async (userId: string, provider: string) => ({
+        userId,
+        provider,
+        accessToken: 'mock-google-token',
+        refreshToken: 'mock-refresh',
+        expiresAt: new Date(Date.now() + 3600000),
+        scopes: ['https://www.googleapis.com/auth/calendar.events.readonly'],
+        status: 'connected',
+      }),
+      updateConnectionStatus: async () => {},
+      createNormalizedEvent: async () => {},
+      upsertCalendarBlock: async (data: any) => {
+        savedBlocks.push(data);
+        return data;
+      },
+    };
+
+    const service = new IntegrationsService(mockRepo);
+    const result = await service.runHistoricalSync('user-test-1', 'google');
+
+    expect(result.provider).toBe('google');
+    expect(savedBlocks.length).toBeGreaterThan(0);
+    expect(savedBlocks[0]).toHaveProperty('userId', 'user-test-1');
+    expect(savedBlocks[0]).toHaveProperty('provider', 'google');
+    expect(savedBlocks[0]).toHaveProperty('kind');
+    expect(savedBlocks[0]).toHaveProperty('isBusy');
+    // Ensure privacy: raw summary/description NOT saved in calendar block repository object
+    expect(savedBlocks[0]).not.toHaveProperty('summary');
+    expect(savedBlocks[0]).not.toHaveProperty('description');
+  });
+
 });
+

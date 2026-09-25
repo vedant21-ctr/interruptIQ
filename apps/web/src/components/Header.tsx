@@ -32,7 +32,7 @@ export function Header({
       </div>
 
       <nav className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
-        {(['dashboard', 'context', 'injector', 'decisions', 'feedback', 'memory', 'settings'] as const).map((page) => (
+        {(['dashboard', 'report', 'context', 'injector', 'decisions', 'feedback', 'memory', 'settings'] as const).map((page) => (
           <button
             key={page}
             onClick={() => setActivePage(page)}
@@ -42,7 +42,7 @@ export function Header({
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            {page}
+            {page === 'report' ? 'Focus Report' : page}
           </button>
         ))}
       </nav>

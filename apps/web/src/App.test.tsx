@@ -7,6 +7,15 @@ vi.mock('axios');
 describe('useRealtimeData hook API integrations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    if (typeof localStorage === 'undefined') {
+      const storage: Record<string, string> = {};
+      (globalThis as any).localStorage = {
+        getItem: (key: string) => storage[key] || null,
+        setItem: (key: string, value: string) => { storage[key] = value; },
+        removeItem: (key: string) => { delete storage[key]; },
+        clear: () => { Object.keys(storage).forEach((k) => delete storage[k]); },
+      };
+    }
     localStorage.clear();
   });
 
