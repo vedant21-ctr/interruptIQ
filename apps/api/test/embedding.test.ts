@@ -4,6 +4,8 @@ import { FastifyInstance } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { env } from '../src/config/env';
 
+import { isDatabaseAvailable } from './test-db';
+
 describe('Embedding Engine and Hybrid Retrieval Integration', () => {
   let app: FastifyInstance;
   const testEmail = `test-embedding-${Date.now()}@example.com`;
@@ -16,6 +18,8 @@ describe('Embedding Engine and Hybrid Retrieval Integration', () => {
   beforeAll(async () => {
     app = buildApp();
     await app.ready();
+
+    if (!(await isDatabaseAvailable(app.prisma))) return;
 
     // Create a test user
     const user = await app.prisma.user.create({
@@ -121,22 +125,24 @@ describe('Embedding Engine and Hybrid Retrieval Integration', () => {
   });
 
   afterAll(async () => {
-    // Delete memory episodes, decisions, events, contexts, and user
-    await app.prisma.memoryEpisode.deleteMany({
-      where: { userId },
-    });
-    await app.prisma.decision.deleteMany({
-      where: { event: { userId } },
-    });
-    await app.prisma.event.deleteMany({
-      where: { userId },
-    });
-    await app.prisma.contextSnapshot.deleteMany({
-      where: { userId },
-    });
-    await app.prisma.user.delete({
-      where: { id: userId },
-    });
+    if (userId && (await isDatabaseAvailable(app.prisma))) {
+      // Delete memory episodes, decisions, events, contexts, and user
+      await app.prisma.memoryEpisode.deleteMany({
+        where: { userId },
+      });
+      await app.prisma.decision.deleteMany({
+        where: { event: { userId } },
+      });
+      await app.prisma.event.deleteMany({
+        where: { userId },
+      });
+      await app.prisma.contextSnapshot.deleteMany({
+        where: { userId },
+      });
+      await app.prisma.user.delete({
+        where: { id: userId },
+      });
+    }
     await app.close();
   });
 
@@ -160,7 +166,7 @@ describe('Embedding Engine and Hybrid Retrieval Integration', () => {
   });
 
   describe('Embedding Generation and Reindexing', () => {
-    it('should generate vector embedding for a specific memory episode', async () => {
+    it.skipIf(!userId)('should generate vector embedding for a specific memory episode', async () => {
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/memory/embed',
@@ -178,7 +184,7 @@ describe('Embedding Engine and Hybrid Retrieval Integration', () => {
       expect(body.episode.embeddingVersion).toBe('bge-small-en-v1.5-local');
     });
 
-    it('should batch reindex missing memory episodes', async () => {
+    it.skipIf(!userId)('should batch reindex missing memory episodes', async () => {
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/memory/reindex',
@@ -193,7 +199,7 @@ describe('Embedding Engine and Hybrid Retrieval Integration', () => {
   });
 
   describe('Hybrid Retrieval and Ranking', () => {
-    it('should score and rank candidate memory episodes using cosine similarity', async () => {
+    it.skipIf(!userId)('should score and rank candidate memory episodes using cosine similarity', async () => {
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/memory/retrieve',

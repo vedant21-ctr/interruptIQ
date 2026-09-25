@@ -74,7 +74,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       const hashedPassword = await bcrypt.hash(password, salt);
 
       // Create user and credentials account in a transaction
-      const user = await fastify.prisma.$transaction(async (tx) => {
+      const user = await fastify.prisma.$transaction(async (tx: any) => {
         const newUser = await tx.user.create({
           data: {
             email,

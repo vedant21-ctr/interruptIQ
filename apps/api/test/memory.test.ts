@@ -4,6 +4,8 @@ import { FastifyInstance } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { env } from '../src/config/env';
 
+import { isDatabaseAvailable } from './test-db';
+
 describe('Episodic Memory Engine Integration', () => {
   let app: FastifyInstance;
   const testEmail = `test-memory-${Date.now()}@example.com`;
@@ -16,6 +18,8 @@ describe('Episodic Memory Engine Integration', () => {
   beforeAll(async () => {
     app = buildApp();
     await app.ready();
+
+    if (!(await isDatabaseAvailable(app.prisma))) return;
 
     // Create a test user
     const user = await app.prisma.user.create({
@@ -78,19 +82,21 @@ describe('Episodic Memory Engine Integration', () => {
   });
 
   afterAll(async () => {
-    // Clean up all user relations
-    await app.prisma.memoryEpisode.deleteMany({
-      where: { userId },
-    });
-    await app.prisma.decision.deleteMany({
-      where: { event: { userId } },
-    });
-    await app.prisma.event.deleteMany({
-      where: { userId },
-    });
-    await app.prisma.user.delete({
-      where: { id: userId },
-    });
+    if (userId && (await isDatabaseAvailable(app.prisma))) {
+      // Clean up all user relations
+      await app.prisma.memoryEpisode.deleteMany({
+        where: { userId },
+      });
+      await app.prisma.decision.deleteMany({
+        where: { event: { userId } },
+      });
+      await app.prisma.event.deleteMany({
+        where: { userId },
+      });
+      await app.prisma.user.delete({
+        where: { id: userId },
+      });
+    }
     await app.close();
   });
 
@@ -106,7 +112,7 @@ describe('Episodic Memory Engine Integration', () => {
   });
 
   describe('Memory Episode Creation & Lifecycle', () => {
-    it('should create a memory episode successfully and build feedback summary', async () => {
+    it.skipIf(!userId)('should create a memory episode successfully and build feedback summary', async () => {
       // Add feedback to the decision first
       await app.prisma.feedback.create({
         data: {
@@ -140,7 +146,7 @@ describe('Episodic Memory Engine Integration', () => {
       episodeId = body.episode.id;
     });
 
-    it('should prevent duplicate memory episodes for the same decision with 400', async () => {
+    it.skipIf(!userId)('should prevent duplicate memory episodes for the same decision with 400', async () => {
       const response = await app.inject({
         method: 'POST',
         url: '/api/v1/memory',
@@ -155,7 +161,7 @@ describe('Episodic Memory Engine Integration', () => {
       expect(body.message).toContain('already exists');
     });
 
-    it('should fetch a single memory episode by ID', async () => {
+    it.skipIf(!userId)('should fetch a single memory episode by ID', async () => {
       const response = await app.inject({
         method: 'GET',
         url: `/api/v1/memory/${episodeId}`,
@@ -171,6 +177,7 @@ describe('Episodic Memory Engine Integration', () => {
 
   describe('Memory Search and Filtering', () => {
     beforeAll(async () => {
+      if (!userId) return;
       // Ingest the second episode to have comparison logs
       const res = await app.inject({
         method: 'POST',
@@ -185,7 +192,7 @@ describe('Episodic Memory Engine Integration', () => {
       }
     });
 
-    it('should list and search memory episodes', async () => {
+    it.skipIf(!userId)('should list and search memory episodes', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/memory/search',
@@ -198,7 +205,7 @@ describe('Episodic Memory Engine Integration', () => {
       expect(body.total).toBe(2);
     });
 
-    it('should filter by decisionType', async () => {
+    it.skipIf(!userId)('should filter by decisionType', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/memory/search',
@@ -212,7 +219,7 @@ describe('Episodic Memory Engine Integration', () => {
       expect(body.items[0].decisionType).toBe('BATCH');
     });
 
-    it('should filter by event category', async () => {
+    it.skipIf(!userId)('should filter by event category', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/memory/search',
@@ -226,7 +233,7 @@ describe('Episodic Memory Engine Integration', () => {
       expect(body.items[0].decisionType).toBe('IMMEDIATE');
     });
 
-    it('should search by keyword in explanation or matchedRules', async () => {
+    it.skipIf(!userId)('should search by keyword in explanation or matchedRules', async () => {
       const response = await app.inject({
         method: 'GET',
         url: '/api/v1/memory/search',
@@ -242,7 +249,7 @@ describe('Episodic Memory Engine Integration', () => {
   });
 
   describe('Prisma Decision Deletion Safety Rule', () => {
-    it('should keep the memory episode intact after deleting the parent decision', async () => {
+    it.skipIf(!userId)('should keep the memory episode intact after deleting the parent decision', async () => {
       // 1. Delete parent decision
       await app.prisma.decision.delete({
         where: { id: decisionId },

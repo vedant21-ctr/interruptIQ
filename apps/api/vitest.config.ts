@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
+process.env.DATABASE_URL =
+  process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/interruptiq?schema=public';
+
 export default defineConfig({
   test: {
     environment: 'node',
