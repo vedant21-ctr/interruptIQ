@@ -72,6 +72,12 @@ export interface ShadowDecision {
 
 export type ReviewVerdict = 'hurt' | 'fine' | 'unsure';
 
+export type HarmCategory =
+  | 'FALSE_POSITIVE_URGENCY'
+  | 'VIP_SENDER_MISSED'
+  | 'NEEDED_IMMEDIATE_REPLY'
+  | 'OTHER';
+
 export interface DecisionReview {
   id: string;
   interruptionId: string;
@@ -79,6 +85,13 @@ export interface DecisionReview {
   policyVersion: PolicyVersion;
   verdict: ReviewVerdict;
   comment?: string;
+  reasonCode?: ReasonCode;
+  focusState?: FocusState;
+  outcome?: PolicyOutcome;
+  channelType?: 'dm' | 'group_dm' | 'private' | 'public';
+  mentionType?: 'direct' | 'channel' | 'here' | 'thread_reply' | 'none';
+  hasUrgencySignal?: boolean;
+  harmCategory?: HarmCategory;
   createdAt: string; // ISO 8601
 }
 
@@ -116,4 +129,37 @@ export interface FocusReport {
     decision: ShadowDecision;
     existingReview?: DecisionReview;
   }>;
+}
+
+export interface EvaluationDimensionAggregationItem {
+  [key: string]: any;
+  totalReviews: number;
+  agreeCount: number;
+  unsureCount: number;
+  disagreeCount: number;
+  disagreementRate: number; // 0-1
+}
+
+export interface HarmCategoryAggregationItem {
+  harmCategory: HarmCategory;
+  count: number;
+}
+
+export interface EvaluationSummary {
+  userId: string;
+  policyVersion: PolicyVersion;
+  periodStart: string; // ISO 8601
+  periodEnd: string;   // ISO 8601
+  totalReviews: number;
+  agreeCount: number;
+  unsureCount: number;
+  disagreeCount: number;
+  disagreementRate: number; // 0-1
+  disagreementByReasonCode: EvaluationDimensionAggregationItem[];
+  disagreementByFocusState: EvaluationDimensionAggregationItem[];
+  disagreementByOutcome: EvaluationDimensionAggregationItem[];
+  disagreementByHarmCategory: HarmCategoryAggregationItem[];
+  disagreementByChannelType: EvaluationDimensionAggregationItem[];
+  disagreementByMentionType: EvaluationDimensionAggregationItem[];
+  disagreementByUrgencySignal: EvaluationDimensionAggregationItem[];
 }

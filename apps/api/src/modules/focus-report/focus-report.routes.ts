@@ -9,11 +9,19 @@ const GenerateReportSchema = z.object({
   endAt: z.string().optional(),
 });
 
+const HarmCategorySchema = z.enum([
+  'FALSE_POSITIVE_URGENCY',
+  'VIP_SENDER_MISSED',
+  'NEEDED_IMMEDIATE_REPLY',
+  'OTHER',
+]);
+
 const SubmitReviewSchema = z.object({
   reportId: z.string(),
   interruptionId: z.string(),
   verdict: z.enum(['AGREE', 'UNSURE', 'DISAGREE']),
   comment: z.string().optional(),
+  harmCategory: HarmCategorySchema.optional(),
 });
 
 export async function focusReportRoutes(fastify: FastifyInstance) {
@@ -55,6 +63,19 @@ export async function focusReportRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({
       success: true,
       review,
+    });
+  });
+
+  // GET /api/v1/focus-report/evaluation-summary - Retrieve aggregated evaluation metrics
+  fastify.get('/evaluation-summary', { preHandler: [authenticate] }, async (request, reply) => {
+    const { startAt, endAt } = GenerateReportSchema.parse(request.query || {});
+    const userId = request.user.id;
+
+    const summary = await service.getEvaluationSummary(userId, { startAt, endAt });
+
+    return reply.status(200).send({
+      success: true,
+      summary,
     });
   });
 }

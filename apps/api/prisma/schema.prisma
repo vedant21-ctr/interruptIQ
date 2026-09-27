@@ -337,6 +337,16 @@ model FocusReportReview {
   policyVersion   String   @default("shadow-v0.1")
   verdict         String   // "AGREE" | "UNSURE" | "DISAGREE"
   comment         String?
+
+  // Evaluation Feature Snapshot (Phase 4 Step 1)
+  reasonCode       String?
+  focusState       String?
+  outcome          String?
+  channelType      String?
+  mentionType      String?
+  hasUrgencySignal Boolean?
+  harmCategory     String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

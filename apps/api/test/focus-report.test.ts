@@ -485,4 +485,409 @@ describe('Phase 2 — Focus Report Generation Pipeline', () => {
       expect(report.metrics.criticalDelayRate?.value).toBe(1.0); // 1 out of 1 delayed item was marked DISAGREE (hurt)
     });
   });
+
+  describe('Phase 4 Step 1 — Evaluation Feature Snapshots', () => {
+    it('A & B: derives and persists evaluation snapshot (reasonCode, focusState, outcome, etc.) server-side', async () => {
+      const storedReviews: any[] = [];
+      const mockRepo: any = {
+        findEventById: async (id: string) => ({
+          id: 'evt-meeting-dm',
+          userId: 'user-1',
+          timestamp: new Date('2026-09-22T10:20:00.000Z'),
+          sender: 'colleague-dm',
+          category: 'social',
+          priority: 'medium',
+          metadata: {
+            providerEventId: 'slack:T1:D1:evt-meeting-dm',
+            channelType: 'dm',
+            mentionType: 'direct',
+            hasUrgencySignal: false,
+          },
+        }),
+        getCalendarBlocks: async () => [
+          {
+            id: 'cal-m1',
+            providerEventId: 'google:primary:evt-m1',
+            startAt: new Date('2026-09-22T10:00:00.000Z'),
+            endAt: new Date('2026-09-22T11:00:00.000Z'),
+            kind: 'meeting',
+            isBusy: true,
+            attendeeCount: 3,
+          },
+        ],
+        upsertReview: async (data: any) => {
+          storedReviews.push(data);
+          return data;
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const result = await service.submitReview('user-1', {
+        reportId: 'rep-1',
+        interruptionId: 'evt-meeting-dm',
+        verdict: 'AGREE',
+      });
+
+      expect(result).toBeDefined();
+      expect(storedReviews.length).toBe(1);
+      const rev = storedReviews[0];
+      expect(rev.verdict).toBe('AGREE');
+      expect(rev.focusState).toBe('meeting');
+      expect(rev.outcome).toBe('DELAY_TO_MEETING_END');
+      expect(rev.reasonCode).toBe('MEETING_DELAY_TO_END');
+      expect(rev.channelType).toBe('dm');
+      expect(rev.mentionType).toBe('direct');
+      expect(rev.hasUrgencySignal).toBe(false);
+    });
+
+    it('C: stores valid harmCategory when verdict is DISAGREE', async () => {
+      const storedReviews: any[] = [];
+      const mockRepo: any = {
+        findEventById: async () => ({
+          id: 'evt-1',
+          userId: 'user-1',
+          timestamp: new Date('2026-09-22T10:20:00.000Z'),
+          metadata: { channelType: 'dm', mentionType: 'direct' },
+        }),
+        getCalendarBlocks: async () => [],
+        upsertReview: async (data: any) => {
+          storedReviews.push(data);
+          return data;
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      await service.submitReview('user-1', {
+        reportId: 'rep-1',
+        interruptionId: 'evt-1',
+        verdict: 'DISAGREE',
+        harmCategory: 'NEEDED_IMMEDIATE_REPLY',
+      });
+
+      expect(storedReviews.length).toBe(1);
+      expect(storedReviews[0].harmCategory).toBe('NEEDED_IMMEDIATE_REPLY');
+    });
+
+    it('D: rejects invalid harmCategory value', async () => {
+      const mockRepo: any = {
+        findEventById: async () => ({ id: 'evt-1', userId: 'user-1', timestamp: new Date() }),
+        getCalendarBlocks: async () => [],
+      };
+
+      const service = new FocusReportService(mockRepo);
+      await expect(
+        service.submitReview('user-1', {
+          reportId: 'rep-1',
+          interruptionId: 'evt-1',
+          verdict: 'DISAGREE',
+          harmCategory: 'INVALID_CATEGORY' as any,
+        })
+      ).rejects.toThrow('Invalid harmCategory value');
+    });
+
+    it('E: rejects harmCategory when verdict is AGREE or UNSURE', async () => {
+      const mockRepo: any = {
+        findEventById: async () => ({ id: 'evt-1', userId: 'user-1', timestamp: new Date() }),
+        getCalendarBlocks: async () => [],
+      };
+
+      const service = new FocusReportService(mockRepo);
+      await expect(
+        service.submitReview('user-1', {
+          reportId: 'rep-1',
+          interruptionId: 'evt-1',
+          verdict: 'AGREE',
+          harmCategory: 'FALSE_POSITIVE_URGENCY',
+        })
+      ).rejects.toThrow('harmCategory is only allowed when verdict is DISAGREE');
+    });
+
+    it('F: re-submitting review updates existing review without duplicate creation', async () => {
+      const reviewsMap = new Map<string, any>();
+      const mockRepo: any = {
+        findEventById: async () => ({ id: 'evt-1', userId: 'user-1', timestamp: new Date() }),
+        getCalendarBlocks: async () => [],
+        upsertReview: async (data: any) => {
+          const key = `${data.userId}:${data.interruptionId}`;
+          reviewsMap.set(key, data);
+          return data;
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      await service.submitReview('user-1', {
+        reportId: 'rep-1',
+        interruptionId: 'evt-1',
+        verdict: 'AGREE',
+      });
+
+      expect(reviewsMap.size).toBe(1);
+      expect(reviewsMap.get('user-1:evt-1').verdict).toBe('AGREE');
+
+      // Re-submit with DISAGREE
+      await service.submitReview('user-1', {
+        reportId: 'rep-1',
+        interruptionId: 'evt-1',
+        verdict: 'DISAGREE',
+        harmCategory: 'OTHER',
+      });
+
+      expect(reviewsMap.size).toBe(1); // Idempotent upsert
+      expect(reviewsMap.get('user-1:evt-1').verdict).toBe('DISAGREE');
+      expect(reviewsMap.get('user-1:evt-1').harmCategory).toBe('OTHER');
+    });
+
+    it('G: rejects cross-user review submission', async () => {
+      const mockRepo: any = {
+        findEventById: async () => ({ id: 'evt-1', userId: 'user-owner-99' }),
+      };
+
+      const service = new FocusReportService(mockRepo);
+      await expect(
+        service.submitReview('user-attacker', {
+          reportId: 'rep-1',
+          interruptionId: 'evt-1',
+          verdict: 'AGREE',
+        })
+      ).rejects.toThrow('Event not found or unauthorized');
+    });
+
+    it('I: ensures zero raw message text or calendar summary in review snapshot', async () => {
+      const storedReviews: any[] = [];
+      const mockRepo: any = {
+        findEventById: async () => ({
+          id: 'evt-1',
+          userId: 'user-1',
+          timestamp: new Date(),
+          metadata: { channelType: 'dm', mentionType: 'direct' },
+        }),
+        getCalendarBlocks: async () => [],
+        upsertReview: async (data: any) => {
+          storedReviews.push(data);
+          return data;
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      await service.submitReview('user-1', {
+        reportId: 'rep-1',
+        interruptionId: 'evt-1',
+        verdict: 'AGREE',
+      });
+
+      const serialized = JSON.stringify(storedReviews[0]);
+      expect(serialized).not.toContain('body');
+      expect(serialized).not.toContain('summary');
+      expect(serialized).not.toContain('attendees');
+      expect(serialized).not.toContain('SECRET');
+    });
+  });
+
+  describe('Phase 4 Step 2 — Evaluation Telemetry Summary API', () => {
+    it('A: returns zeroed metrics when user has empty review dataset', async () => {
+      const mockRepo: any = {
+        findReviewsForPeriod: async () => [],
+      };
+      const service = new FocusReportService(mockRepo);
+      const summary = await service.getEvaluationSummary('user-empty');
+
+      expect(summary.totalReviews).toBe(0);
+      expect(summary.agreeCount).toBe(0);
+      expect(summary.unsureCount).toBe(0);
+      expect(summary.disagreeCount).toBe(0);
+      expect(summary.disagreementRate).toBe(0);
+      expect(summary.disagreementByReasonCode).toEqual([]);
+      expect(summary.disagreementByFocusState).toEqual([]);
+      expect(summary.disagreementByOutcome).toEqual([]);
+      expect(summary.disagreementByHarmCategory).toEqual([]);
+    });
+
+    it('B & C: aggregates mixed AGREE/UNSURE/DISAGREE reviews and calculates exact disagreement rate', async () => {
+      const mockReviews = [
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'UNSURE', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'DISAGREE', harmCategory: 'NEEDED_IMMEDIATE_REPLY', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+        { userId: 'u1', verdict: 'DISAGREE', harmCategory: 'VIP_SENDER_MISSED', reasonCode: 'R1', focusState: 'meeting', outcome: 'DELAY_TO_MEETING_END' },
+      ];
+
+      const mockRepo: any = {
+        findReviewsForPeriod: async () => mockReviews,
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const summary = await service.getEvaluationSummary('u1');
+
+      expect(summary.totalReviews).toBe(10);
+      expect(summary.agreeCount).toBe(7);
+      expect(summary.unsureCount).toBe(1);
+      expect(summary.disagreeCount).toBe(2);
+      expect(summary.disagreementRate).toBe(0.2);
+    });
+
+    it('D, E, F, G: groups correctly by reasonCode, focusState, outcome, and harmCategory', async () => {
+      const mockReviews = [
+        {
+          userId: 'u1',
+          verdict: 'AGREE',
+          reasonCode: 'MEETING_DELAY_TO_END',
+          focusState: 'meeting',
+          outcome: 'DELAY_TO_MEETING_END',
+          channelType: 'dm',
+          mentionType: 'direct',
+          hasUrgencySignal: false,
+        },
+        {
+          userId: 'u1',
+          verdict: 'DISAGREE',
+          harmCategory: 'FALSE_POSITIVE_URGENCY',
+          reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY',
+          focusState: 'focus_block',
+          outcome: 'DELAY_TO_BOUNDARY',
+          channelType: 'public',
+          mentionType: 'thread_reply',
+          hasUrgencySignal: true,
+        },
+        {
+          userId: 'u1',
+          verdict: 'DISAGREE',
+          harmCategory: 'FALSE_POSITIVE_URGENCY',
+          reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY',
+          focusState: 'focus_block',
+          outcome: 'DELAY_TO_BOUNDARY',
+          channelType: 'public',
+          mentionType: 'thread_reply',
+          hasUrgencySignal: true,
+        },
+      ];
+
+      const mockRepo: any = {
+        findReviewsForPeriod: async () => mockReviews,
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const summary = await service.getEvaluationSummary('u1');
+
+      expect(summary.disagreementByReasonCode.length).toBe(2);
+      const fbItem = summary.disagreementByReasonCode.find((i) => i.reasonCode === 'FOCUS_BLOCK_DELAY_BOUNDARY');
+      expect(fbItem).toBeDefined();
+      expect(fbItem?.totalReviews).toBe(2);
+      expect(fbItem?.disagreeCount).toBe(2);
+      expect(fbItem?.disagreementRate).toBe(1);
+
+      const fbState = summary.disagreementByFocusState.find((i) => i.focusState === 'focus_block');
+      expect(fbState?.totalReviews).toBe(2);
+      expect(fbState?.disagreementRate).toBe(1);
+
+      const outcomeBoundary = summary.disagreementByOutcome.find((i) => i.outcome === 'DELAY_TO_BOUNDARY');
+      expect(outcomeBoundary?.totalReviews).toBe(2);
+
+      expect(summary.disagreementByHarmCategory).toEqual([
+        { harmCategory: 'FALSE_POSITIVE_URGENCY', count: 2 },
+      ]);
+    });
+
+    it('H: filters evaluation summary by date-range parameters', async () => {
+      const mockReviews = [
+        { userId: 'u1', verdict: 'AGREE', createdAt: new Date('2026-09-10T10:00:00Z') },
+        { userId: 'u1', verdict: 'DISAGREE', createdAt: new Date('2026-09-20T10:00:00Z') },
+      ];
+
+      const mockRepo: any = {
+        findReviewsForPeriod: async (userId: string, startAt?: Date, endAt?: Date) => {
+          return mockReviews.filter((r) => {
+            if (startAt && r.createdAt < startAt) return false;
+            if (endAt && r.createdAt > endAt) return false;
+            return true;
+          });
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const summary = await service.getEvaluationSummary('u1', {
+        startAt: '2026-09-15T00:00:00Z',
+        endAt: '2026-09-25T23:59:59Z',
+      });
+
+      expect(summary.totalReviews).toBe(1);
+      expect(summary.disagreeCount).toBe(1);
+      expect(summary.agreeCount).toBe(0);
+    });
+
+    it('I: enforces strict user isolation so User A cannot access User B data', async () => {
+      const mockRepo: any = {
+        findReviewsForPeriod: async (userId: string) => {
+          if (userId === 'user-a') {
+            return [{ userId: 'user-a', verdict: 'AGREE' }];
+          }
+          return [];
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const summaryA = await service.getEvaluationSummary('user-a');
+      const summaryB = await service.getEvaluationSummary('user-b');
+
+      expect(summaryA.totalReviews).toBe(1);
+      expect(summaryA.userId).toBe('user-a');
+      expect(summaryB.totalReviews).toBe(0);
+      expect(summaryB.userId).toBe('user-b');
+    });
+
+    it('J: verifies privacy — response contains no raw text, titles, emails, or tokens', async () => {
+      const mockReviews = [
+        {
+          userId: 'u1',
+          verdict: 'DISAGREE',
+          harmCategory: 'OTHER',
+          reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY',
+          focusState: 'focus_block',
+          outcome: 'DELAY_TO_BOUNDARY',
+        },
+      ];
+
+      const mockRepo: any = {
+        findReviewsForPeriod: async () => mockReviews,
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const summary = await service.getEvaluationSummary('u1');
+      const json = JSON.stringify(summary);
+
+      expect(json).not.toContain('slackMessage');
+      expect(json).not.toContain('calendarTitle');
+      expect(json).not.toContain('attendeeEmail');
+      expect(json).not.toContain('oauthToken');
+      expect(json).not.toContain('rawPayload');
+      expect(json).not.toContain('comment');
+    });
+
+    it('K: ensures deterministic sorting by totalReviews DESC then key ASC', async () => {
+      const mockReviews = [
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'B_CODE' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'A_CODE' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'A_CODE' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'C_CODE' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'C_CODE' },
+      ];
+
+      const mockRepo: any = {
+        findReviewsForPeriod: async () => mockReviews,
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const summary = await service.getEvaluationSummary('u1');
+
+      expect(summary.disagreementByReasonCode.map((i) => i.reasonCode)).toEqual([
+        'A_CODE',
+        'C_CODE',
+        'B_CODE',
+      ]);
+    });
+  });
 });
