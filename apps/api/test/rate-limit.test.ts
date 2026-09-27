@@ -7,6 +7,7 @@ import { cacheService } from '../src/services/cache.service';
 import {
   BoundedMemoryStore,
   resolveRoutePolicy,
+  matchesRoutePrefix,
   normalizeIp,
   generateClientKey,
   memoryStore,
@@ -121,6 +122,61 @@ describe('API Rate Limiting & Abuse Protection', () => {
       expect(policy.group).toBe('global');
       expect(policy.max).toBe(100);
     });
+
+    it('should enforce boundary-aware matching and reject false-prefix routes', () => {
+      // Helper function boundary validation
+      expect(matchesRoutePrefix('/api/v1/events', '/api/v1/events')).toBe(true);
+      expect(matchesRoutePrefix('/api/v1/events/123', '/api/v1/events')).toBe(true);
+      expect(matchesRoutePrefix('/api/v1/eventsSomething', '/api/v1/events')).toBe(false);
+      expect(matchesRoutePrefix('/api/v1/eventsExtra/xyz', '/api/v1/events')).toBe(false);
+
+      // Exact and descendant matches for prefix route groups
+      expect(resolveRoutePolicy('POST', '/api/v1/events', defaultLimits).group).toBe('events');
+      expect(resolveRoutePolicy('GET', '/api/v1/events/123', defaultLimits).group).toBe('events');
+      expect(resolveRoutePolicy('GET', '/api/v1/events/123/status', defaultLimits).group).toBe('events');
+
+      // False-prefix events routes must NOT match events policy, falling through to global
+      expect(resolveRoutePolicy('POST', '/api/v1/eventsSomething', defaultLimits).group).toBe('global');
+      expect(resolveRoutePolicy('GET', '/api/v1/eventsExtra/123', defaultLimits).group).toBe('global');
+
+      // Auth endpoint boundary matching
+      expect(resolveRoutePolicy('POST', '/api/v1/auth', defaultLimits).group).toBe('auth');
+      expect(resolveRoutePolicy('POST', '/api/v1/auth/login', defaultLimits).group).toBe('auth');
+      expect(resolveRoutePolicy('POST', '/api/v1/authenticate', defaultLimits).group).toBe('global');
+      expect(resolveRoutePolicy('GET', '/api/v1/author/profile', defaultLimits).group).toBe('global');
+
+      // Decision endpoint boundary matching
+      expect(resolveRoutePolicy('POST', '/api/v1/decision', defaultLimits).group).toBe('decision');
+      expect(resolveRoutePolicy('POST', '/api/v1/decision/evaluate', defaultLimits).group).toBe('decision');
+      expect(resolveRoutePolicy('POST', '/api/v1/decisions', defaultLimits).group).toBe('global');
+      expect(resolveRoutePolicy('POST', '/api/v1/decisionSomething', defaultLimits).group).toBe('global');
+
+      // Critic endpoint boundary matching
+      expect(resolveRoutePolicy('POST', '/api/v1/critic', defaultLimits).group).toBe('critic');
+      expect(resolveRoutePolicy('POST', '/api/v1/critic/evaluate', defaultLimits).group).toBe('critic');
+      expect(resolveRoutePolicy('POST', '/api/v1/critical', defaultLimits).group).toBe('global');
+      expect(resolveRoutePolicy('POST', '/api/v1/criticExtra', defaultLimits).group).toBe('global');
+
+      // Retrieval endpoint boundary matching
+      expect(resolveRoutePolicy('POST', '/api/v1/memory/retrieve', defaultLimits).group).toBe('retrieval');
+      expect(resolveRoutePolicy('POST', '/api/v1/memory/retrieve/custom', defaultLimits).group).toBe('retrieval');
+      expect(resolveRoutePolicy('POST', '/api/v1/memory/retrieveSomething', defaultLimits).group).toBe('global');
+      expect(resolveRoutePolicy('POST', '/api/v1/memory/embed', defaultLimits).group).toBe('retrieval');
+      expect(resolveRoutePolicy('POST', '/api/v1/memory/embedding', defaultLimits).group).toBe('global');
+      expect(resolveRoutePolicy('POST', '/api/v1/memory/reindex', defaultLimits).group).toBe('retrieval');
+      expect(resolveRoutePolicy('POST', '/api/v1/memory/reindexing', defaultLimits).group).toBe('global');
+
+      // Exempt routes boundary matching
+      expect(resolveRoutePolicy('GET', '/health', defaultLimits).isExempt).toBe(true);
+      expect(resolveRoutePolicy('GET', '/health/deep', defaultLimits).isExempt).toBe(true);
+      expect(resolveRoutePolicy('GET', '/healthcheck', defaultLimits).isExempt).toBe(false);
+      expect(resolveRoutePolicy('GET', '/ready', defaultLimits).isExempt).toBe(true);
+      expect(resolveRoutePolicy('GET', '/readySomething', defaultLimits).isExempt).toBe(false);
+      expect(resolveRoutePolicy('GET', '/live', defaultLimits).isExempt).toBe(true);
+      expect(resolveRoutePolicy('GET', '/liveCheck', defaultLimits).isExempt).toBe(false);
+      expect(resolveRoutePolicy('GET', '/documentation', defaultLimits).isExempt).toBe(true);
+      expect(resolveRoutePolicy('GET', '/documentationExtra', defaultLimits).isExempt).toBe(false);
+    });
   });
 
   describe('BoundedMemoryStore', () => {
@@ -159,6 +215,25 @@ describe('API Rate Limiting & Abuse Protection', () => {
 
       store.cleanup();
       expect(store.size()).toBe(0);
+
+      store.close();
+    });
+
+    it('should respect custom capacity configuration and dynamic updates', () => {
+      const store = new BoundedMemoryStore(5, 60000);
+      expect(store.getMaxKeys()).toBe(5);
+
+      store.setMaxKeys(2);
+      expect(store.getMaxKeys()).toBe(2);
+
+      store.increment('k1', 10000);
+      store.increment('k2', 10000);
+      store.increment('k3', 10000);
+      expect(store.size()).toBe(2);
+
+      store.reset();
+      expect(store.size()).toBe(0);
+      expect(store.getMaxKeys()).toBe(5);
 
       store.close();
     });
@@ -735,5 +810,77 @@ describe('API Rate Limiting & Abuse Protection', () => {
       await app.close();
       expect(closeSpy).toHaveBeenCalled();
     });
+
+    it('30. should apply boundary-aware route matching in HTTP requests and avoid false-prefix group assignment', async () => {
+      app = buildApp({
+        rateLimit: {
+          enabled: true,
+          eventsMax: 1,
+          authMax: 2,
+          globalMax: 20,
+        },
+      });
+      await app.ready();
+      setupPrismaMock(app);
+
+      // /api/v1/eventsSomething must NOT match events policy (limit 1), should receive global policy (limit 20)
+      const res1 = await app.inject({
+        method: 'POST',
+        url: '/api/v1/eventsSomething',
+      });
+      expect(res1.headers['ratelimit-limit']).toBe('20');
+
+      // /api/v1/eventsExtra/123 must NOT match events policy
+      const res2 = await app.inject({
+        method: 'POST',
+        url: '/api/v1/eventsExtra/123',
+      });
+      expect(res2.headers['ratelimit-limit']).toBe('20');
+
+      // /api/v1/authenticate must NOT match auth policy (limit 2), should receive global policy (limit 20)
+      const res3 = await app.inject({
+        method: 'POST',
+        url: '/api/v1/authenticate',
+      });
+      expect(res3.headers['ratelimit-limit']).toBe('20');
+    });
+
+    it('31. should honor custom maxMemoryKeys option in the memory fallback store', async () => {
+      // Default maxMemoryKeys is 10000 when not specified
+      const defaultApp = buildApp({
+        rateLimit: { enabled: true },
+      });
+      await defaultApp.ready();
+      expect(memoryStore.getMaxKeys()).toBe(10000);
+      await defaultApp.close();
+
+      // Custom maxMemoryKeys is honored
+      const customCapacity = 2;
+      app = buildApp({
+        rateLimit: {
+          enabled: true,
+          maxMemoryKeys: customCapacity,
+          globalMax: 10,
+        },
+      });
+      await app.ready();
+      expect(memoryStore.getMaxKeys()).toBe(customCapacity);
+
+      // Force fallback in-memory store by mocking Redis client as unavailable
+      vi.spyOn(cacheService, 'getRedisClient').mockReturnValue(null);
+
+      // Request from IP 1
+      await app.inject({ method: 'GET', url: '/api/v1/mem-test', remoteAddress: '10.0.0.1' });
+      expect(memoryStore.size()).toBe(1);
+
+      // Request from IP 2
+      await app.inject({ method: 'GET', url: '/api/v1/mem-test', remoteAddress: '10.0.0.2' });
+      expect(memoryStore.size()).toBe(2);
+
+      // Request from IP 3: should trigger capacity eviction because maxMemoryKeys is 2
+      await app.inject({ method: 'GET', url: '/api/v1/mem-test', remoteAddress: '10.0.0.3' });
+      expect(memoryStore.size()).toBe(customCapacity);
+    });
   });
 });
+

@@ -14,10 +14,11 @@ export interface RateLimitPluginOptions {
   retrievalMax?: number;
   criticMax?: number;
   maxMemoryKeys?: number;
+  store?: BoundedMemoryStore;
 }
 
 export type PolicyGroup =
-  'exempt' | 'auth' | 'critic' | 'retrieval' | 'decision' | 'events' | 'global';
+  | 'exempt' | 'auth' | 'critic' | 'retrieval' | 'decision' | 'events' | 'global';
 
 export interface RoutePolicy {
   group: PolicyGroup;
@@ -52,6 +53,15 @@ export function normalizeIp(rawIp?: string): string {
 }
 
 /**
+ * Checks whether a path matches a route prefix exactly or as a descendant path.
+ * Boundary-aware: matches '/prefix' and '/prefix/...', but not '/prefixSomething'.
+ */
+export function matchesRoutePrefix(path: string, prefix: string): boolean {
+  const normalizedPrefix = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
+  return path === normalizedPrefix || path.startsWith(`${normalizedPrefix}/`);
+}
+
+/**
  * Resolves route policies without hardcoding limits inside route handlers.
  * Matches HTTP method and URL path to specific sensitivity tiers.
  */
@@ -60,13 +70,10 @@ export function resolveRoutePolicy(method: string, url: string, limits: PolicyLi
 
   // Exempt routes: health checks, probes, and Swagger documentation
   if (
-    path === '/health' ||
-    path.startsWith('/health') ||
-    path === '/ready' ||
-    path.startsWith('/ready') ||
-    path === '/live' ||
-    path.startsWith('/live') ||
-    path.startsWith('/documentation')
+    matchesRoutePrefix(path, '/health') ||
+    matchesRoutePrefix(path, '/ready') ||
+    matchesRoutePrefix(path, '/live') ||
+    matchesRoutePrefix(path, '/documentation')
   ) {
     return {
       group: 'exempt',
@@ -77,7 +84,7 @@ export function resolveRoutePolicy(method: string, url: string, limits: PolicyLi
   }
 
   // Auth endpoints (sensitive to brute-force and credential stuffing)
-  if (path.startsWith('/api/v1/auth')) {
+  if (matchesRoutePrefix(path, '/api/v1/auth')) {
     return {
       group: 'auth',
       max: limits.authMax,
@@ -87,7 +94,7 @@ export function resolveRoutePolicy(method: string, url: string, limits: PolicyLi
   }
 
   // LLM Critic evaluations (extremely expensive computation / external API calls)
-  if (path.startsWith('/api/v1/critic')) {
+  if (matchesRoutePrefix(path, '/api/v1/critic')) {
     return {
       group: 'critic',
       max: limits.criticMax,
@@ -98,12 +105,9 @@ export function resolveRoutePolicy(method: string, url: string, limits: PolicyLi
 
   // Semantic retrieval and embeddings (expensive vector & database operations)
   if (
-    path === '/api/v1/memory/retrieve' ||
-    path.startsWith('/api/v1/memory/retrieve') ||
-    path === '/api/v1/memory/embed' ||
-    path.startsWith('/api/v1/memory/embed') ||
-    path === '/api/v1/memory/reindex' ||
-    path.startsWith('/api/v1/memory/reindex')
+    matchesRoutePrefix(path, '/api/v1/memory/retrieve') ||
+    matchesRoutePrefix(path, '/api/v1/memory/embed') ||
+    matchesRoutePrefix(path, '/api/v1/memory/reindex')
   ) {
     return {
       group: 'retrieval',
@@ -114,7 +118,7 @@ export function resolveRoutePolicy(method: string, url: string, limits: PolicyLi
   }
 
   // Decision engine evaluations (rules & heuristic pipelines)
-  if (path.startsWith('/api/v1/decision')) {
+  if (matchesRoutePrefix(path, '/api/v1/decision')) {
     return {
       group: 'decision',
       max: limits.decisionMax,
@@ -124,7 +128,7 @@ export function resolveRoutePolicy(method: string, url: string, limits: PolicyLi
   }
 
   // Events ingestion and history (high-throughput ingest pipeline)
-  if (path.startsWith('/api/v1/events')) {
+  if (matchesRoutePrefix(path, '/api/v1/events')) {
     return {
       group: 'events',
       max: limits.eventsMax,
@@ -196,20 +200,41 @@ interface MemoryCounter {
  * across multiple API instances.
  */
 export class BoundedMemoryStore {
-  private readonly maxKeys: number;
+  private maxKeys: number;
+  private readonly defaultMaxKeys: number;
+  private readonly cleanupIntervalMs: number;
   private readonly store: Map<string, MemoryCounter>;
   private cleanupTimer: NodeJS.Timeout | null = null;
 
   constructor(maxKeys: number = 10000, cleanupIntervalMs: number = 30000) {
+    this.defaultMaxKeys = maxKeys;
     this.maxKeys = maxKeys;
+    this.cleanupIntervalMs = cleanupIntervalMs;
     this.store = new Map();
 
-    this.cleanupTimer = setInterval(() => {
-      this.cleanup();
-    }, cleanupIntervalMs);
+    this.startCleanupTimer();
+  }
 
-    if (this.cleanupTimer && typeof this.cleanupTimer.unref === 'function') {
-      this.cleanupTimer.unref();
+  public startCleanupTimer(): void {
+    if (!this.cleanupTimer) {
+      this.cleanupTimer = setInterval(() => {
+        this.cleanup();
+      }, this.cleanupIntervalMs);
+
+      if (this.cleanupTimer && typeof this.cleanupTimer.unref === 'function') {
+        this.cleanupTimer.unref();
+      }
+    }
+  }
+
+  public getMaxKeys(): number {
+    return this.maxKeys;
+  }
+
+  public setMaxKeys(maxKeys: number): void {
+    this.maxKeys = maxKeys;
+    while (this.store.size > this.maxKeys) {
+      this.evictOne();
     }
   }
 
@@ -260,6 +285,7 @@ export class BoundedMemoryStore {
 
   public reset(): void {
     this.store.clear();
+    this.maxKeys = this.defaultMaxKeys;
   }
 
   public close(): void {
@@ -280,6 +306,11 @@ const REDIS_ERROR_LOG_THROTTLE_MS = 60000;
 async function rateLimitPlugin(fastify: FastifyInstance, opts: RateLimitPluginOptions = {}) {
   const isEnabled = opts.enabled ?? env.RATE_LIMIT_ENABLED;
 
+  const fallbackStore = opts.store ?? memoryStore;
+  const maxMemoryKeys = opts.maxMemoryKeys ?? 10000;
+  fallbackStore.setMaxKeys(maxMemoryKeys);
+  fallbackStore.startCleanupTimer();
+
   const limits: PolicyLimits = {
     globalMax: opts.globalMax ?? env.RATE_LIMIT_GLOBAL_MAX,
     globalWindowMs: opts.globalWindowMs ?? env.RATE_LIMIT_GLOBAL_WINDOW_MS,
@@ -292,7 +323,7 @@ async function rateLimitPlugin(fastify: FastifyInstance, opts: RateLimitPluginOp
 
   // Cleanup on Fastify server shutdown to prevent hanging processes
   fastify.addHook('onClose', async () => {
-    memoryStore.close();
+    fallbackStore.close();
   });
 
   // Execute in preHandler hook so authenticate (in preValidation) has already attached request.user
@@ -334,13 +365,13 @@ async function rateLimitPlugin(fastify: FastifyInstance, opts: RateLimitPluginOp
           );
         }
         // Fall back to in-memory counter if Redis fails
-        const memResult = memoryStore.increment(key, windowMs);
+        const memResult = fallbackStore.increment(key, windowMs);
         count = memResult.count;
         ttlMs = memResult.ttlMs;
       }
     } else {
       // In-memory fallback during development when Redis is unavailable or unconfigured
-      const memResult = memoryStore.increment(key, windowMs);
+      const memResult = fallbackStore.increment(key, windowMs);
       count = memResult.count;
       ttlMs = memResult.ttlMs;
     }
@@ -369,3 +400,4 @@ export default fp(rateLimitPlugin, {
   name: 'rate-limit-plugin',
   fastify: '4.x',
 });
+
