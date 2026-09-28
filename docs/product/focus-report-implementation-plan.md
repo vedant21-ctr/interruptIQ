@@ -272,11 +272,34 @@ All decisions tag `policyVersion: "shadow-v0.1"`. Replaying historical fixtures 
 - Dynamic integration of user review verdicts into replay simulator metrics (`adjustedAvoidableShare` and `criticalDelayRate`).
 - Vitest unit/integration test coverage for review submission, invalid labels, cross-user authorization, and metric updates in `apps/api/test/focus-report.test.ts`.
 
+### Phase-4 Step 1 Completed (Evaluation Feature Snapshots)
+- Server-derived feature snapshots captured on `FocusReportReview` (`reasonCode`, `focusState`, `outcome`, `channelType`, `mentionType`, `hasUrgencySignal`, `harmCategory`).
+- Structured harm categories: `FALSE_POSITIVE_URGENCY`, `VIP_SENDER_MISSED`, `NEEDED_IMMEDIATE_REPLY`, `OTHER`.
+
+### Phase-4 Step 2 Completed (Evaluation Telemetry Summary API)
+- Pure aggregation DTOs and `GET /api/v1/focus-report/evaluation-summary` endpoint.
+- Aggregates overall totals, disagreement rates, and dimension breakdowns by `reasonCode`, `focusState`, `outcome`, `harmCategory`, `channelType`, `mentionType`, and `urgencySignal`.
+- Protected by JWT authentication and user scoping with privacy preservation.
+
+### Phase-4 Step 3 Completed (Calibration & Policy Analysis Report)
+- Pure calibration analysis engine in `packages/shared/src/focus-report/calibration.ts`.
+- Evaluates disagreement evidence per `reasonCode`, `focusState`, `outcome`, and `harmCategory`.
+- Centralized deterministic thresholds:
+  - `MIN_CALIBRATION_SAMPLES = 5` (Default)
+  - `LOW_DISAGREEMENT_MAX = 0.10`
+  - `ELEVATED_DISAGREEMENT_MAX = 0.30`
+- Sample sufficiency classification: `INSUFFICIENT_SAMPLE` (< 5 samples) vs `SUFFICIENT_SAMPLE` (>= 5 samples).
+- Calibration signals: `INSUFFICIENT_SAMPLE`, `LOW_DISAGREEMENT`, `ELEVATED_DISAGREEMENT`, `HIGH_DISAGREEMENT`.
+- Factual, deterministic observation statements generated without subjective policy judgements or premature rule modifications.
+- Exposed via `GET /api/v1/focus-report/calibration-analysis` with strict JWT user scoping and privacy guarantees.
+- Policy changes remain deferred until sufficient evidence accumulates.
+
 ---
 
-## 15. Next Implementation Step
+## 15. Policy Calibration & Refinement Strategy
 
-- Collect structured internal dogfooding feedback on Shadow Policy v0.1 decisions before considering Phase 4 policy refinements or live features.
+- Collect review telemetry and monitor `GET /api/v1/focus-report/calibration-analysis` until policy rules reach `SUFFICIENT_SAMPLE` status (>= 5 reviews).
+- Policy modifications to `evaluateShadowPolicy` remain deferred until statistical sufficiency is established for target reasonCodes.
 
 ---
 

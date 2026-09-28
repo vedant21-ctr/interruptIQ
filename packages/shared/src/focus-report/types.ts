@@ -163,3 +163,72 @@ export interface EvaluationSummary {
   disagreementByMentionType: EvaluationDimensionAggregationItem[];
   disagreementByUrgencySignal: EvaluationDimensionAggregationItem[];
 }
+
+export type SampleSufficiency = 'INSUFFICIENT_SAMPLE' | 'SUFFICIENT_SAMPLE';
+
+export type CalibrationSignal =
+  | 'INSUFFICIENT_SAMPLE'
+  | 'LOW_DISAGREEMENT'
+  | 'ELEVATED_DISAGREEMENT'
+  | 'HIGH_DISAGREEMENT';
+
+export interface CalibrationThresholds {
+  minCalibrationSamples: number;
+  lowDisagreementMax: number;
+  elevatedDisagreementMax: number;
+}
+
+export interface CalibrationReasonCodeItem {
+  reasonCode: ReasonCode;
+  totalReviews: number;
+  agreeCount: number;
+  unsureCount: number;
+  disagreeCount: number;
+  disagreementRate: number;
+  sampleSufficiency: SampleSufficiency;
+  calibrationSignal: CalibrationSignal;
+  harmCategories: HarmCategoryAggregationItem[];
+}
+
+export interface CalibrationFocusStateItem {
+  focusState: FocusState;
+  totalReviews: number;
+  agreeCount: number;
+  unsureCount: number;
+  disagreeCount: number;
+  disagreementRate: number;
+  sampleSufficiency: SampleSufficiency;
+  calibrationSignal: CalibrationSignal;
+}
+
+export interface CalibrationOutcomeItem {
+  outcome: PolicyOutcome;
+  totalReviews: number;
+  agreeCount: number;
+  unsureCount: number;
+  disagreeCount: number;
+  disagreementRate: number;
+  sampleSufficiency: SampleSufficiency;
+  calibrationSignal: CalibrationSignal;
+}
+
+export interface CalibrationObservation {
+  dimension: 'reasonCode' | 'focusState' | 'outcome' | 'overall';
+  key: string;
+  message: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+}
+
+export interface CalibrationAnalysis {
+  userId: string;
+  policyVersion: PolicyVersion;
+  periodStart: string;
+  periodEnd: string;
+  totalReviews: number;
+  thresholds: CalibrationThresholds;
+  byReasonCode: CalibrationReasonCodeItem[];
+  byFocusState: CalibrationFocusStateItem[];
+  byOutcome: CalibrationOutcomeItem[];
+  harmCategories: HarmCategoryAggregationItem[];
+  observations: CalibrationObservation[];
+}

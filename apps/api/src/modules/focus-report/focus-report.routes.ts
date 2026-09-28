@@ -66,6 +66,13 @@ export async function focusReportRoutes(fastify: FastifyInstance) {
     });
   });
 
+const CalibrationQuerySchema = z.object({
+  startAt: z.string().optional(),
+  endAt: z.string().optional(),
+  policyVersion: z.string().optional(),
+  minSamples: z.coerce.number().optional(),
+});
+
   // GET /api/v1/focus-report/evaluation-summary - Retrieve aggregated evaluation metrics
   fastify.get('/evaluation-summary', { preHandler: [authenticate] }, async (request, reply) => {
     const { startAt, endAt } = GenerateReportSchema.parse(request.query || {});
@@ -76,6 +83,26 @@ export async function focusReportRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({
       success: true,
       summary,
+    });
+  });
+
+  // GET /api/v1/focus-report/calibration-analysis - Retrieve evidence-based calibration report
+  fastify.get('/calibration-analysis', { preHandler: [authenticate] }, async (request, reply) => {
+    const { startAt, endAt, policyVersion, minSamples } = CalibrationQuerySchema.parse(
+      request.query || {}
+    );
+    const userId = request.user.id;
+
+    const analysis = await service.getCalibrationAnalysis(userId, {
+      startAt,
+      endAt,
+      policyVersion,
+      minCalibrationSamples: minSamples,
+    });
+
+    return reply.status(200).send({
+      success: true,
+      analysis,
     });
   });
 }

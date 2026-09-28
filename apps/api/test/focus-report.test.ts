@@ -890,4 +890,168 @@ describe('Phase 2 — Focus Report Generation Pipeline', () => {
       ]);
     });
   });
+
+  describe('Phase 4 Step 3 — Calibration & Policy Analysis Report', () => {
+    it('A: returns empty calibration analysis for user with empty review dataset', async () => {
+      const mockRepo: any = {
+        findReviewsForPeriod: async () => [],
+      };
+      const service = new FocusReportService(mockRepo);
+      const analysis = await service.getCalibrationAnalysis('user-empty');
+
+      expect(analysis.totalReviews).toBe(0);
+      expect(analysis.thresholds.minCalibrationSamples).toBe(5);
+      expect(analysis.byReasonCode).toEqual([]);
+      expect(analysis.byFocusState).toEqual([]);
+      expect(analysis.byOutcome).toEqual([]);
+      expect(analysis.observations.length).toBe(1);
+      expect(analysis.observations[0].message).toContain('Zero reviewed samples available');
+    });
+
+    it('B, C, D, E, F, G, H, I: evaluates sample sufficiency, calibration bands, and dimension aggregations', async () => {
+      const mockReviews = [
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY', focusState: 'focus_block', outcome: 'DELAY_TO_BOUNDARY' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY', focusState: 'focus_block', outcome: 'DELAY_TO_BOUNDARY' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY', focusState: 'focus_block', outcome: 'DELAY_TO_BOUNDARY' },
+        { userId: 'u1', verdict: 'DISAGREE', harmCategory: 'NEEDED_IMMEDIATE_REPLY', reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY', focusState: 'focus_block', outcome: 'DELAY_TO_BOUNDARY' },
+        { userId: 'u1', verdict: 'DISAGREE', harmCategory: 'NEEDED_IMMEDIATE_REPLY', reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY', focusState: 'focus_block', outcome: 'DELAY_TO_BOUNDARY' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'NEVER_SUPPRESS_VIP', focusState: 'available', outcome: 'DELIVER' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'NEVER_SUPPRESS_VIP', focusState: 'available', outcome: 'DELIVER' },
+      ];
+
+      const mockRepo: any = {
+        findReviewsForPeriod: async () => mockReviews,
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const analysis = await service.getCalibrationAnalysis('u1');
+
+      expect(analysis.totalReviews).toBe(7);
+
+      const fbItem = analysis.byReasonCode.find((r) => r.reasonCode === 'FOCUS_BLOCK_DELAY_BOUNDARY');
+      expect(fbItem).toBeDefined();
+      expect(fbItem?.totalReviews).toBe(5);
+      expect(fbItem?.disagreeCount).toBe(2);
+      expect(fbItem?.disagreementRate).toBe(0.4);
+      expect(fbItem?.sampleSufficiency).toBe('SUFFICIENT_SAMPLE');
+      expect(fbItem?.calibrationSignal).toBe('HIGH_DISAGREEMENT');
+      expect(fbItem?.harmCategories).toEqual([
+        { harmCategory: 'NEEDED_IMMEDIATE_REPLY', count: 2 },
+      ]);
+
+      const vipItem = analysis.byReasonCode.find((r) => r.reasonCode === 'NEVER_SUPPRESS_VIP');
+      expect(vipItem).toBeDefined();
+      expect(vipItem?.totalReviews).toBe(2);
+      expect(vipItem?.sampleSufficiency).toBe('INSUFFICIENT_SAMPLE');
+      expect(vipItem?.calibrationSignal).toBe('INSUFFICIENT_SAMPLE');
+
+      const fbState = analysis.byFocusState.find((s) => s.focusState === 'focus_block');
+      expect(fbState?.totalReviews).toBe(5);
+      expect(fbState?.sampleSufficiency).toBe('SUFFICIENT_SAMPLE');
+
+      const boundaryOutcome = analysis.byOutcome.find((o) => o.outcome === 'DELAY_TO_BOUNDARY');
+      expect(boundaryOutcome?.totalReviews).toBe(5);
+      expect(boundaryOutcome?.sampleSufficiency).toBe('SUFFICIENT_SAMPLE');
+
+      expect(analysis.harmCategories).toEqual([
+        { harmCategory: 'NEEDED_IMMEDIATE_REPLY', count: 2 },
+      ]);
+    });
+
+    it('J & K: respects date-range parameters and policy-version filter', async () => {
+      const mockReviews = [
+        { userId: 'u1', policyVersion: 'shadow-v0.1', verdict: 'AGREE', createdAt: new Date('2026-09-10T10:00:00Z') },
+        { userId: 'u1', policyVersion: 'shadow-v0.1', verdict: 'DISAGREE', createdAt: new Date('2026-09-20T10:00:00Z') },
+      ];
+
+      const mockRepo: any = {
+        findReviewsForPeriod: async (userId: string, startAt?: Date, endAt?: Date, policyVersion?: string) => {
+          return mockReviews.filter((r) => {
+            if (policyVersion && r.policyVersion !== policyVersion) return false;
+            if (startAt && r.createdAt < startAt) return false;
+            if (endAt && r.createdAt > endAt) return false;
+            return true;
+          });
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const analysis = await service.getCalibrationAnalysis('u1', {
+        startAt: '2026-09-15T00:00:00Z',
+        endAt: '2026-09-25T23:59:59Z',
+        policyVersion: 'shadow-v0.1',
+      });
+
+      expect(analysis.totalReviews).toBe(1);
+      expect(analysis.policyVersion).toBe('shadow-v0.1');
+    });
+
+    it('L: enforces strict cross-user data isolation for calibration analysis', async () => {
+      const mockRepo: any = {
+        findReviewsForPeriod: async (userId: string) => {
+          if (userId === 'user-a') {
+            return [{ userId: 'user-a', verdict: 'AGREE', reasonCode: 'R1' }];
+          }
+          return [];
+        },
+      };
+
+      const service = new FocusReportService(mockRepo);
+      const analysisA = await service.getCalibrationAnalysis('user-a');
+      const analysisB = await service.getCalibrationAnalysis('user-b');
+
+      expect(analysisA.totalReviews).toBe(1);
+      expect(analysisA.userId).toBe('user-a');
+      expect(analysisB.totalReviews).toBe(0);
+      expect(analysisB.userId).toBe('user-b');
+    });
+
+    it('M: verifies privacy — calibration analysis returns zero raw text or credentials', async () => {
+      const mockReviews = [
+        { userId: 'u1', verdict: 'DISAGREE', harmCategory: 'OTHER', reasonCode: 'R1' },
+      ];
+      const mockRepo: any = { findReviewsForPeriod: async () => mockReviews };
+
+      const service = new FocusReportService(mockRepo);
+      const analysis = await service.getCalibrationAnalysis('u1');
+      const json = JSON.stringify(analysis);
+
+      expect(json).not.toContain('slackMessage');
+      expect(json).not.toContain('calendarTitle');
+      expect(json).not.toContain('attendeeEmail');
+      expect(json).not.toContain('oauthToken');
+      expect(json).not.toContain('comment');
+    });
+
+    it('N: ensures deterministic sorting by totalReviews DESC then key ASC in calibration report', async () => {
+      const mockReviews = [
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'B_RULE' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'A_RULE' },
+        { userId: 'u1', verdict: 'AGREE', reasonCode: 'A_RULE' },
+      ];
+      const mockRepo: any = { findReviewsForPeriod: async () => mockReviews };
+
+      const service = new FocusReportService(mockRepo);
+      const analysis = await service.getCalibrationAnalysis('u1');
+
+      expect(analysis.byReasonCode.map((r) => r.reasonCode)).toEqual(['A_RULE', 'B_RULE']);
+    });
+
+    it('Q: ensures insufficient sample does NOT produce a calibration signal suggesting policy change', async () => {
+      const mockReviews = [
+        { userId: 'u1', verdict: 'DISAGREE', harmCategory: 'VIP_SENDER_MISSED', reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY' },
+        { userId: 'u1', verdict: 'DISAGREE', harmCategory: 'VIP_SENDER_MISSED', reasonCode: 'FOCUS_BLOCK_DELAY_BOUNDARY' },
+      ];
+      const mockRepo: any = { findReviewsForPeriod: async () => mockReviews };
+
+      const service = new FocusReportService(mockRepo);
+      const analysis = await service.getCalibrationAnalysis('u1', { minCalibrationSamples: 5 });
+
+      const item = analysis.byReasonCode.find((r) => r.reasonCode === 'FOCUS_BLOCK_DELAY_BOUNDARY');
+      expect(item?.sampleSufficiency).toBe('INSUFFICIENT_SAMPLE');
+      expect(item?.calibrationSignal).toBe('INSUFFICIENT_SAMPLE');
+      const obs = analysis.observations.find((o) => o.key === 'FOCUS_BLOCK_DELAY_BOUNDARY');
+      expect(obs?.message).toContain('below the minimum threshold of 5');
+    });
+  });
 });

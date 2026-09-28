@@ -1,4 +1,5 @@
 import {
+  CalibrationAnalysis,
   DecisionReview,
   DerivedCalendarBlock,
   evaluateShadowPolicy,
@@ -10,6 +11,7 @@ import {
   inferFocusState,
   InterruptionRecord,
   ReviewVerdict,
+  runCalibrationAnalysis,
   runReplaySimulator,
   UserSettings,
 } from '@interrupt-iq/shared';
@@ -25,6 +27,13 @@ export interface GenerateFocusReportOptions {
 export interface EvaluationSummaryOptions {
   startAt?: string;
   endAt?: string;
+}
+
+export interface CalibrationAnalysisOptions {
+  startAt?: string;
+  endAt?: string;
+  policyVersion?: string;
+  minCalibrationSamples?: number;
 }
 
 export interface SubmitReviewDto {
@@ -442,5 +451,61 @@ export class FocusReportService {
       disagreementByMentionType: formatDimensionList(mentionTypeMap, 'mentionType'),
       disagreementByUrgencySignal: formatUrgencyList(),
     };
+  }
+
+  async getCalibrationAnalysis(
+    userId: string,
+    options?: CalibrationAnalysisOptions
+  ): Promise<CalibrationAnalysis> {
+    const endAtIso = options?.endAt || new Date().toISOString();
+    const startAtIso =
+      options?.startAt ||
+      new Date(new Date(endAtIso).getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    const startAtDate = new Date(startAtIso);
+    const endAtDate = new Date(endAtIso);
+
+    if (isNaN(startAtDate.getTime()) || isNaN(endAtDate.getTime()) || startAtDate > endAtDate) {
+      throw new BadRequestError('Invalid date range');
+    }
+
+    const policyVersion = (options?.policyVersion || 'shadow-v0.1') as any;
+
+    const dbReviews =
+      (await this.repository.findReviewsForPeriod?.(userId, startAtDate, endAtDate, policyVersion)) ||
+      (await this.repository.findUserReviews?.(userId, policyVersion)) ||
+      [];
+
+    const reviews: DecisionReview[] = dbReviews
+      .filter((r: any) => {
+        if (!r.createdAt) return true;
+        const created = new Date(r.createdAt).getTime();
+        return created >= startAtDate.getTime() && created <= endAtDate.getTime();
+      })
+      .map((r: any) => ({
+        id: r.id || `rev-${r.interruptionId}`,
+        interruptionId: r.interruptionId,
+        userId: r.userId || userId,
+        policyVersion,
+        verdict: r.verdict === 'DISAGREE' ? 'hurt' : r.verdict === 'AGREE' ? 'fine' : 'unsure',
+        comment: r.comment || undefined,
+        reasonCode: r.reasonCode || undefined,
+        focusState: r.focusState || undefined,
+        outcome: r.outcome || undefined,
+        channelType: r.channelType || undefined,
+        mentionType: r.mentionType || undefined,
+        hasUrgencySignal: r.hasUrgencySignal ?? undefined,
+        harmCategory: r.harmCategory || undefined,
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+      }));
+
+    return runCalibrationAnalysis(reviews, userId, {
+      policyVersion,
+      periodStart: startAtIso,
+      periodEnd: endAtIso,
+      thresholds: options?.minCalibrationSamples
+        ? { minCalibrationSamples: options.minCalibrationSamples }
+        : undefined,
+    });
   }
 }
