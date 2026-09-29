@@ -11,7 +11,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().default('postgresql://postgres:postgres@localhost:5432/interrupt_iq?schema=public'),
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
   JWT_SECRET: z.string().default('supersecret-interrupt-iq-key-change-in-prod'),
-  
+
   // Integrations OAuth credentials
   SLACK_CLIENT_ID: z.string().optional(),
   SLACK_CLIENT_SECRET: z.string().optional(),
@@ -19,6 +19,48 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   APP_BASE_URL: z.string().url().default('http://localhost:3001'),
+
+  // Rate Limiting Configuration
+  RATE_LIMIT_ENABLED: z
+    .preprocess((val) => {
+      if (typeof val === 'string') return val.toLowerCase() === 'true' || val === '1';
+      if (typeof val === 'boolean') return val;
+      return true;
+    }, z.boolean())
+    .default(true),
+  RATE_LIMIT_GLOBAL_MAX: z
+    .preprocess((val) => parseInt(val as string, 10), z.number().int().positive())
+    .default(100),
+  RATE_LIMIT_GLOBAL_WINDOW_MS: z
+    .preprocess((val) => parseInt(val as string, 10), z.number().int().positive())
+    .default(60000),
+  RATE_LIMIT_AUTH_MAX: z
+    .preprocess((val) => parseInt(val as string, 10), z.number().int().positive())
+    .default(10),
+  RATE_LIMIT_EVENTS_MAX: z
+    .preprocess((val) => parseInt(val as string, 10), z.number().int().positive())
+    .default(120),
+  RATE_LIMIT_DECISION_MAX: z
+    .preprocess((val) => parseInt(val as string, 10), z.number().int().positive())
+    .default(60),
+  RATE_LIMIT_RETRIEVAL_MAX: z
+    .preprocess((val) => parseInt(val as string, 10), z.number().int().positive())
+    .default(20),
+  RATE_LIMIT_CRITIC_MAX: z
+    .preprocess((val) => parseInt(val as string, 10), z.number().int().positive())
+    .default(10),
+
+  // Reverse proxy trust (false for direct access; true or CIDR string if behind trusted reverse proxy)
+  TRUST_PROXY: z
+    .preprocess(
+      (val) => {
+        if (val === 'true' || val === true) return true;
+        if (val === 'false' || val === false || val === undefined) return false;
+        return val;
+      },
+      z.union([z.boolean(), z.string()])
+    )
+    .default(false),
 });
 
 const parsed = envSchema.safeParse(process.env);

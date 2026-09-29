@@ -6,7 +6,7 @@ import swaggerUi from '@fastify/swagger-ui';
 
 import prismaPlugin from './plugins/prisma';
 import observabilityPlugin from './plugins/observability';
-import rateLimitPlugin from './plugins/rate-limit';
+import rateLimitPlugin, { RateLimitPluginOptions } from './plugins/rate-limit';
 import { errorHandler } from './errors/global-handler';
 import { env } from './config/env';
 
@@ -24,7 +24,11 @@ import { criticRoutes } from './modules/critic/critic.routes';
 import { integrationsRoutes } from './modules/integrations/integrations.routes';
 import { focusReportRoutes } from './modules/focus-report/focus-report.routes';
 
-export function buildApp(): FastifyInstance {
+export interface AppOptions {
+  rateLimit?: RateLimitPluginOptions;
+}
+
+export function buildApp(options?: AppOptions): FastifyInstance {
   const loggerConfig = {
     development: {
       transport: {
@@ -46,6 +50,7 @@ export function buildApp(): FastifyInstance {
 
   const app = Fastify({
     logger: loggerConfig[currentEnv],
+    trustProxy: env.TRUST_PROXY,
   });
 
   // Global Error Handler
@@ -55,11 +60,16 @@ export function buildApp(): FastifyInstance {
   app.register(observabilityPlugin);
 
   // Rate Limiting
-  app.register(rateLimitPlugin);
+  app.register(rateLimitPlugin, options?.rateLimit);
 
   // Security & Utility Plugins
   app.register(cors, {
-    origin: env.NODE_ENV === 'production' ? (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : false) : true,
+    origin:
+      env.NODE_ENV === 'production'
+        ? process.env.ALLOWED_ORIGINS
+          ? process.env.ALLOWED_ORIGINS.split(',')
+          : false
+        : true,
   });
   app.register(helmet, { contentSecurityPolicy: false }); // Disable CSP for Swagger UI compatibility
 
